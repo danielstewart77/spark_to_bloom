@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block content %}
+<header class="glow">
+    <h1>Downloads</h1>
+</header>
+
+<main>
+    <section id="downloadSection">
+        <p></p>
+        <p>Click the link below to download the latest version of our Receipt App.</p>
+        
+        <p>v.01 - release: <a href="{{ url_for('static', filename='receipt_debug_v_01.apk') }}" class="download-link">___(Debug APK)___</a></p>
+    </section>
+</main>
+{% endblock %}

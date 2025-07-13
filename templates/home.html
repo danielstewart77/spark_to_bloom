@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<main>
+    <section id="introduction">
+        <h2>technology <--> innovation</h2>
+        <p>here are some of my recent (personal) projects</p>
+        <div class="grid-container">
+            <div class="grid-item">
+                <img src="/static/images/image3.png" alt="Preview" class="hover-image">
+                <h3>agent_tooling</h3>
+                <p>pypi library with tools for building agents</p>
+            </div>
+            <a href="/pr/hivemind.md" class="grid-item-link">
+                <div class="grid-item">
+                    <img src="/static/images/image3.png" alt="Preview" class="hover-image">
+                    <h3>hive_mind</h3>
+                    <p>agent_tooling implementation</p>
+                </div>
+            </a>
+            <div class="grid-item">
+                <img src="/static/images/image1.png" alt="Preview" class="hover-image">
+                <h3>adxl345spi</h3>
+                <p>adxl345spi: c server for 1-4 accelerometers.</p>
+            </div>
+            <div class="grid-item">
+                <img src="/static/images/image1.png" alt="Preview" class="hover-image">
+                <h3>redoak</h3>
+                <p>implementation of adxl345spi driver</p>
+            </div>
+        </div>
+        
+    </section>
+</main>
+{% endblock %}

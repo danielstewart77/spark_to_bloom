@@ -1,0 +1,390 @@
+/* Enhanced Global Styles */
+body, html {
+    height: 90%;
+    margin: 0;
+    font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+    font-size: small;
+    /* background: #F0FFF0; honeydew */
+    /* background: #90EE90; light green */
+    background: #ACE1AF; /* celadon */
+    /* background: #D0F0C0; tea green */
+    /* background: #71BC78; fern */
+    color: #e7e7de;
+    line-height: 1.6;
+    margin-bottom: 15px;
+}
+
+/* Enhanced Glow Effect */
+.glow {
+    text-shadow: 0 0 5px #4ee8fc, 0 0 10px #4ee8fc, 0 0 15px #21d4fd;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+/* Header Styles */
+header {
+    /* forest green */
+    /* background-color: #228B22; */
+    /* sea green */
+    background-color: #2E8B57;
+    /* moss green */
+    /* background-color: #8A9A5B; */
+    /* hunter green */
+    /* background-color: #355E3B; */
+    /* olive drab */
+    /* background-color: #6B8E23; */
+    /* pine green */
+    /* background-color: #01796F; */
+    /* dark olive green */
+    /* background-color: #556B2F; */
+    padding: 0px;
+    text-align: center;
+    padding-top: 0px;
+    padding-bottom: 0px;
+}
+
+/* Main Content Styling */
+main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    max-width: 800px;
+    margin: auto;
+}
+
+/* Footer Styling */
+footer {
+    text-align: center;
+    padding: 0px;
+    background-color: #0f3460;
+    color: #e7e7de;
+    margin-bottom: 10px;;
+}
+
+/* Button Styling */
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: #21d4fd;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #4ee8fc;
+}
+
+/* Grid Layout for Buttons */
+.grid-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    margin: 20px auto;
+    width: 80%;
+}
+
+.grid-item {
+    background-color: #2d2d2d;
+    color: white;
+    padding: 20px;
+    height: 150px;
+    text-align: center;
+    border-radius: 10px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.3s ease-in-out;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.grid-item:hover {
+    transform: scale(1.05);
+}
+
+.hover-image {
+    opacity: 0; /* Make it invisible by default */
+    transition: opacity 0.3s ease-in-out; /* Smooth fade-in effect */
+    position: absolute;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    pointer-events: none; /* Prevent interaction issues */
+}
+
+.grid-item:hover .hover-image {
+    opacity: 1; /* Make the image visible on hover */
+}
+
+/* Navigation Bar Styling */
+nav {
+    background-color: #2E8B57;
+    padding: 0.5rem 2rem;
+}
+
+nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: flex-start; /* start by default, push login to end */
+    align-items: center;
+    font-size: medium;
+    gap: 20px; /* spacing between items */
+}
+
+nav ul li a {
+    color: #e7e7de;
+    text-decoration: none;
+    transition: color 0.3s;
+    font-family: 'Fira Code', monospace;
+}
+
+nav ul li a:hover {
+    color: #4ee8fc;
+}
+
+/* Special handling for the login/logout list item */
+nav ul li.user-controls {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* User Controls Styling */
+.user-controls {
+    display: flex;
+    justify-content: center;         /* center align both text and link */
+    align-items: center;
+    gap: 10px;                       /* spacing between text and link */
+    margin-top: 1.5rem;              /* a bit more vertical spacing */
+    font-size: 0.9rem;
+    color: white;                   /* ensure contrast over green bg */
+}
+
+.login-button,
+.logout-button,
+.user-link {
+    padding: 6px 12px;
+    border-radius: 5px;
+    background-color: #0f3460;
+    color: white;
+    text-decoration: none;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.login-button:hover,
+.logout-button:hover,
+.user-link:hover {
+    background-color: #21d4fd;
+    color: white;
+}
+
+
+/* Introduction Section Styling */
+#introduction {
+    text-align: center;
+    padding: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    background-color: #2E8B57;
+    border-radius: 10px;
+    margin: 20px 0;
+}
+
+#introduction h2 {
+    color: #21d4fd;
+    margin-bottom: 15px;
+}
+
+.applications {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 20px;
+}
+
+.app {
+    background-color: rgba(255, 255, 255, 0.2);
+    padding: 15px;
+    border-radius: 8px;
+    transition: transform 0.3s ease-in-out;
+}
+
+.app:hover {
+    transform: scale(1.1);
+}
+
+.app h3 {
+    color: #4ee8fc;
+}
+
+.app p {
+    color: #e7e7de;
+}
+
+/* Blog style*/
+/* Terminal-Style Intro Box */
+.terminal-box {
+    background-color: #2d2d2d;
+    color: #e7e7de;
+    padding: 20px;
+    border-radius: 10px;
+    font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+    margin: 40px auto;
+    max-width: 700px;
+    min-width: 700px;
+    line-height: 1.5;
+}
+
+/* Thoughts Section */
+.thoughts-title {
+    font-size: 1.8rem;
+    text-align: center;
+    margin: 40px 0 20px;
+    color: #2d2d2d;
+}
+
+/* Article List */
+.article-list {
+    list-style: none;
+    padding: 0;
+    max-width: 700px;
+    margin: auto;
+}
+
+.article-list li {
+    margin: 10px 0;
+}
+
+.article-list a {
+    background-color: #f3e8a0;
+    color: #2d2d2d;
+    padding: 3px 6px;
+    border-radius: 3px;
+    text-decoration: none;
+    font-family: monospace;
+    transition: background-color 0.2s;
+}
+
+.article-list a:hover {
+    background-color: #f7eeae;
+}
+
+.new-tag {
+    font-size: 0.8rem;
+    color: #ccc;
+    font-style: italic;
+    margin-left: 6px;
+}
+
+/* Article Page */
+.article-container {
+    max-width: 700px;
+    min-width: 700px;
+    margin: 5px auto;
+    padding: 15px;
+    background-color: #2d2d2d;
+    border-radius: 10px;
+}
+
+.article-container h1 {
+    color: #4ee8fc;
+    margin-bottom: 10px;
+}
+
+.article-date {
+    font-size: 0.9rem;
+    color: #ccc;
+    margin-bottom: 5px;
+}
+
+.back-link {
+    display: block;
+    text-align: center;
+    font-size: medium;
+    font-weight: bold;
+    margin-top: 5px;
+    color: #4ee8fc;
+    color: #2E8B57;
+    color: #2d2d2d;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+.markdown-style {
+    font-family: 'Courier New', monospace;
+    background-color: #2d2d2d;
+    border: 1px solid #ddd;
+    padding: 1rem;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  
+  .markdown-style code {
+    display: block;
+    background: #2d2d2d;
+    padding: 0.5em;
+    border-radius: 4px;
+    margin: 1em 0;
+    font-family: inherit;
+  }
+
+  .login-container {
+    background-color: #39714c;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    color: #fff;
+    width: 320px;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+  }
+
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: none;
+    border-radius: 5px;
+  }
+
+  nav .login-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    line-height: 1;
+    height: auto; /* override 100% */
+  }
+  nav ul li.user-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    padding-top: 2px;
+  }
+
+  .article-container a {
+    color: #4ee8fc;
+    text-shadow: 0 0 5px #4ee8fc, 0 0 10px #21d4fd;
+    text-decoration: underline;
+}
+
+.article-container a:hover {
+    color: #21d4fd; /* Or white for high contrast on hover */
+}

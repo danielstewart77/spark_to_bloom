@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+<h2 class="thoughts-title">Pull Requests</h2>
+<div class="terminal-box">
+    <ul class="article-list">
+        <li><a href="/pr/orchestration.md"">hive_mind: why orchestration is the way i'm going </a> <span class="new-tag">(new)</span></li>
+        <li><a href="/pr/hivemind.md"">hive_mind: the mind you've been waiting for </a></span></li>
+    </ul>
+</div>
+{% endblock %}
