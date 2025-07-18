@@ -33,13 +33,13 @@ steps:
   deploy:
     image: alpine
     commands:
-      - echo "🚀 Deploying to /deploy..."
-      - rm -rf /deploy/*
-      - cp -r ./* /deploy/
+      - echo "🚀 Deploying to /mnt/deploy..."
+      - rm -rf /mnt/deploy/*
+      - cp -r ./* /mnt/deploy/
       - echo "✅ Deployment complete!"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/daniel/Storage/Dev/public:/deploy
+      - /home/daniel/Storage/Dev/public:/mnt/deploy
     privileged: true
     when:
       event: push
