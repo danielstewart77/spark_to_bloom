@@ -9,7 +9,7 @@ steps:
       - python -m pytest tests/ || echo "⚠️ No tests found, skipping..."
     when:
       event: push
-    privileged: false
+    privileged: true
 
   # 🐳 Build Docker image
   docker-build:
@@ -27,7 +27,7 @@ steps:
     when:
       event: push
       branch: main
-    privileged: false
+    privileged: true
 
   # 🚀 Deploy app
   deploy:
