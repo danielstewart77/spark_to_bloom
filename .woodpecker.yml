@@ -21,8 +21,8 @@ steps:
       - rm -rf /mnt/deploy/*
       - cp -r ./* /mnt/deploy/
       - echo "📦 Running docker-compose from /mnt/deploy..."
-      - sudo docker compose -f /mnt/deploy/docker-compose.yml down || true
-      - sudo docker compose -f /mnt/deploy/docker-compose.yml up -d --build
+      - docker compose -f /mnt/deploy/docker-compose.yml down || true
+      - docker compose -f /mnt/deploy/docker-compose.yml up -d --build
       - echo "✅ Deployment complete!"
 
 
