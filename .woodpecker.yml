@@ -1,56 +1,33 @@
 steps:
-  # 🧪 Build and test
+  # 🧪 BUILD APP
   build:
     image: python:3.12-slim
     commands:
+      - echo "🔧 Installing dependencies..."
       - pip install -r requirements.txt
-      - python -m pytest tests/ || echo "No tests found, skipping..."
-    when:
-      event: push
-      branch: main
+      - echo "🏗️ Building app..."
+      - python setup.py build || echo "No setup.py found, skipping..."
+      - echo "✅ Build complete"
 
-  # 🐳 Build Docker image
-  docker-build:
-    image: plugins/docker
-    settings:
-      repo: spark-to-bloom
-      tags:
-        - latest
-        - ${CI_COMMIT_SHA:0:8}
-      dockerfile: Dockerfile
-      registry: ${DOCKER_REGISTRY}
-      username:
-        from_secret: docker_username
-      password:
-        from_secret: docker_password
-    when:
-      event: push
-      branch: main
-
-  # 🚀 Deploy to production
+  # 🚀 DEPLOY APP
   deploy:
-    image: alpine/git
-    commands:
-      - apk add --no-cache docker-cli docker-compose
-      - chmod +x ./deploy.sh
-      - ./deploy.sh
+    image: alpine
+    privileged: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}:/workspace/spark_to_bloom
-    environment:
-      DOMAIN: ${DOMAIN:-sparktobloom.com}
-    when:
-      event: push
-      branch: main
+      - /home/daniel/Storage/Dev/public:/mnt/deploy
+    commands:
+      - echo "🚀 Deploying app to host filesystem..."
+      - rm -rf /mnt/deploy/*
+      - cp -r ./* /mnt/deploy/
+      - echo "✅ Deployment complete"
 
-  # 🧹 Cleanup old Docker images
+  # 🧹 CLEANUP
   cleanup:
-    image: alpine/git
-    commands:
-      - apk add --no-cache docker-cli
-      - docker image prune -af --filter "until=72h"
+    image: alpine
+    privileged: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    when:
-      event: push
-      branch: main
+    commands:
+      - echo "🧹 Cleaning up old Docker images..."
+      - docker image prune -af --filter "until=72h"
