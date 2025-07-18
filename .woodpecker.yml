@@ -23,7 +23,7 @@ steps:
       password:
         from_secret: docker_password
     when:
-      event: push
+      event: pushe
       branch: [main, master]
 
   # Deploy to production using deployment script
