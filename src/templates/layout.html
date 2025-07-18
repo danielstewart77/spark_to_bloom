@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spark to Bloom</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet">
     <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
@@ -25,7 +25,7 @@
         <p>> hey there, i'm daniel. feel free to look at my stuff. reach out, if you want to chat</p>
     </div>
     {% block content %}{% endblock %}
-    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+    <script src="{{ request.url_for('static', path='scripts.js') }}"></script>
     <footer class="terminal-box"><p></p></footer>
 </body>
 </html>

@@ -1,9 +1,8 @@
 python-dotenv
-Flask
+fastapi
+uvicorn[standard]
 openai
-gunicorn
-Werkzeug
 markdown
-flask-jwt-extended
-flask-cors
-markdown
+jinja2
+aiofiles
+python-multipart

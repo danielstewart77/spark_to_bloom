@@ -1,0 +1,18 @@
+# Local Development Configuration
+# Usage: docker-compose up
+services:
+  # 🌐 Web App (frontend) - Direct access for local development
+  frontend:
+    build: .
+    container_name: spark-to-bloom-app
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=development
+    ports:
+      - "5000:5000"  # Direct port mapping for local development
+    networks:
+      - default
+
+networks:
+  default:
+    external: false

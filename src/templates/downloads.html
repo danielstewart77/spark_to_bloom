@@ -9,7 +9,7 @@
         <p></p>
         <p>Click the link below to download the latest version of our Receipt App.</p>
         
-        <p>v.01 - release: <a href="{{ url_for('static', filename='receipt_debug_v_01.apk') }}" class="download-link">___(Debug APK)___</a></p>
+        <p>v.01 - release: <a href="{{ request.url_for('static', path='receipt_debug_v_01.apk') }}" class="download-link">___(Debug APK)___</a></p>
     </section>
 </main>
 {% endblock %}

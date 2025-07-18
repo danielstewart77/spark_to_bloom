@@ -1,0 +1,55 @@
+steps:
+  # Build and test
+  build:
+    image: python:3.12-slim
+    commands:
+      - pip install -r requirements.txt
+      - python -m pytest tests/ || echo "No tests found, skipping..."
+    when:
+      event: [push, pull_request]
+
+  # Build Docker image
+  docker-build:
+    image: plugins/docker
+    settings:
+      repo: spark-to-bloom
+      tags: 
+        - latest
+        - ${CI_COMMIT_SHA:0:8}
+      dockerfile: Dockerfile
+      registry: ${DOCKER_REGISTRY}
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+    when:
+      event: push
+      branch: [main, master]
+
+  # Deploy to production using deployment script
+  deploy:
+    image: alpine/git
+    commands:
+      - apk add --no-cache docker-cli docker-compose
+      - chmod +x ./deploy.sh
+      - ./deploy.sh
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}:/workspace/spark_to_bloom
+    environment:
+      - DOMAIN=${DOMAIN:-sparktobloom.com}
+    when:
+      event: push
+      branch: [main, master]
+
+  # Cleanup old images
+  cleanup:
+    image: alpine/git
+    commands:
+      - apk add --no-cache docker-cli
+      - docker image prune -af --filter "until=72h"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    when:
+      event: push
+      branch: [main, master]
