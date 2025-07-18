@@ -1,19 +1,20 @@
 steps:
-  # Build and test
+  # 🧪 Build and test
   build:
     image: python:3.12-slim
     commands:
       - pip install -r requirements.txt
       - python -m pytest tests/ || echo "No tests found, skipping..."
     when:
-      event: [push, pull_request]
+      event: push
+      branch: main
 
-  # Build Docker image
+  # 🐳 Build Docker image
   docker-build:
     image: plugins/docker
     settings:
       repo: spark-to-bloom
-      tags: 
+      tags:
         - latest
         - ${CI_COMMIT_SHA:0:8}
       dockerfile: Dockerfile
@@ -23,10 +24,10 @@ steps:
       password:
         from_secret: docker_password
     when:
-      event: pushe
-      branch: [main, master]
+      event: push
+      branch: main
 
-  # Deploy to production using deployment script
+  # 🚀 Deploy to production
   deploy:
     image: alpine/git
     commands:
@@ -37,12 +38,12 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${PWD}:/workspace/spark_to_bloom
     environment:
-      - DOMAIN=${DOMAIN:-sparktobloom.com}
+      DOMAIN: ${DOMAIN:-sparktobloom.com}
     when:
       event: push
-      branch: [main, master]
+      branch: main
 
-  # Cleanup old images
+  # 🧹 Cleanup old Docker images
   cleanup:
     image: alpine/git
     commands:
@@ -52,4 +53,4 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
     when:
       event: push
-      branch: [main, master]
+      branch: main
