@@ -1,4 +1,4 @@
-pipeline:
+steps:
   # 🧪 Build and test
   build:
     image: python:3.12-slim
@@ -42,6 +42,7 @@ pipeline:
       - echo "✅ Deployment complete!"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
     when:
       event:
         - push
@@ -57,6 +58,7 @@ pipeline:
       - docker image prune -af --filter "until=72h"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
     when:
       event:
         - push
