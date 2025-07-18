@@ -11,8 +11,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.spark.rule=Host(`sparktobloom.com`)"
-      - "traefik.http.routers.spark.entrypoints=websecure"
-      - "traefik.http.routers.spark.tls=true"
+      - "traefik.http.routers.spark.entrypoints=web"
       - "traefik.http.services.spark.loadbalancer.server.port=5000"
     ports:
       - "5000:5000"  # Direct port mapping for local development
