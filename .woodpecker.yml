@@ -1,55 +1,65 @@
-steps:
-  # Build and test
+pipeline:
+  # 🧪 Build and test
   build:
     image: python:3.12-slim
     commands:
+      - echo "🔧 Installing dependencies..."
       - pip install -r requirements.txt
-      - python -m pytest tests/ || echo "No tests found, skipping..."
+      - echo "🧪 Running tests..."
+      - python -m pytest tests/ || echo "⚠️ No tests found, skipping..."
     when:
-      event: [push, pull_request]
+      event:
+        - push
+        - pull_request
 
-  # Build Docker image
+  # 🐳 Build Docker image
   docker-build:
     image: plugins/docker
     settings:
-      repo: spark-to-bloom
-      tags: 
+      repo: ${DOCKER_REGISTRY}/spark-to-bloom
+      tags:
         - latest
         - ${CI_COMMIT_SHA:0:8}
       dockerfile: Dockerfile
-      registry: ${DOCKER_REGISTRY}
       username:
         from_secret: docker_username
       password:
         from_secret: docker_password
     when:
-      event: pushe
-      branch: [main, master]
+      event:
+        - push
+      branch:
+        - main
+        - master
 
-  # Deploy to production using deployment script
+  # 🚀 Deploy app
   deploy:
-    image: alpine/git
+    image: docker:cli
     commands:
-      - apk add --no-cache docker-cli docker-compose
-      - chmod +x ./deploy.sh
-      - ./deploy.sh
+      - echo "🚀 Deploying to production..."
+      - docker compose -f docker-compose.yml down || true
+      - docker compose -f docker-compose.yml up -d --build
+      - echo "✅ Deployment complete!"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${PWD}:/workspace/spark_to_bloom
-    environment:
-      - DOMAIN=${DOMAIN:-sparktobloom.com}
     when:
-      event: push
-      branch: [main, master]
+      event:
+        - push
+      branch:
+        - main
+        - master
 
-  # Cleanup old images
+  # 🧹 Cleanup old Docker images
   cleanup:
-    image: alpine/git
+    image: docker:cli
     commands:
-      - apk add --no-cache docker-cli
+      - echo "🧹 Cleaning up old Docker images..."
       - docker image prune -af --filter "until=72h"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     when:
-      event: push
-      branch: [main, master]
+      event:
+        - push
+      branch:
+        - main
+        - master
