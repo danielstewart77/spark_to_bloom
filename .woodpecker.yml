@@ -8,9 +8,8 @@ steps:
       - echo "🧪 Running tests..."
       - python -m pytest tests/ || echo "⚠️ No tests found, skipping..."
     when:
-      event:
-        - push
-        - pull_request
+      event: push
+    privileged: false
 
   # 🐳 Build Docker image
   docker-build:
@@ -26,29 +25,25 @@ steps:
       password:
         from_secret: docker_password
     when:
-      event:
-        - push
-      branch:
-        - main
-        - master
+      event: push
+      branch: main
+    privileged: false
 
   # 🚀 Deploy app
   deploy:
-    image: docker:cli
+    image: alpine
     commands:
-      - echo "🚀 Deploying to production..."
-      - docker compose -f docker-compose.yml down || true
-      - docker compose -f docker-compose.yml up -d --build
+      - echo "🚀 Deploying to /deploy..."
+      - rm -rf /deploy/*
+      - cp -r ./* /deploy/
       - echo "✅ Deployment complete!"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - /home/daniel/Storage/Dev/public:/deploy
     privileged: true
     when:
-      event:
-        - push
-      branch:
-        - main
-        - master
+      event: push
+      branch: main
 
   # 🧹 Cleanup old Docker images
   cleanup:
@@ -60,8 +55,5 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
     privileged: true
     when:
-      event:
-        - push
-      branch:
-        - main
-        - master
+      event: push
+      branch: main
