@@ -17,10 +17,7 @@ services:
       - "5000:5000"  # Direct port mapping for local development
     networks:
       - traefik-global
-      - default
 
 networks:
   traefik-global:
     external: true
-  default:
-    external: false
