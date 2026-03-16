@@ -1,23 +1,18 @@
-# Local Development Configuration
-# Usage: docker-compose up
 services:
-  # 🌐 Web App (frontend) - Direct access for local development
   frontend:
     build: .
     container_name: spark-to-bloom-app
     restart: unless-stopped
     environment:
-      - ENVIRONMENT=development
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.spark.rule=Host(`sparktobloom.com`)"
-      - "traefik.http.routers.spark.entrypoints=web"
-      - "traefik.http.services.spark.loadbalancer.server.port=5000"
+      - ENVIRONMENT=production
     ports:
-      - "5000:5000"  # Direct port mapping for local development
+      - "5000:5000"
+    volumes:
+      - /home/daniel/Storage/Dev/spark_to_bloom/src:/app
     networks:
       - traefik-global
 
 networks:
   traefik-global:
     external: true
+    name: traefik-global
