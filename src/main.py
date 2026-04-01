@@ -37,6 +37,26 @@ async def pullrequests(request: Request):
     """Pull requests page"""
     return templates.TemplateResponse("pullrequests.html", {"request": request})
 
+@app.get("/linkedin", response_class=HTMLResponse)
+async def linkedin(request: Request):
+    """LinkedIn — staged posts before publishing"""
+    md_path = BASE_DIR / "templates" / "linkedin" / "ada.md"
+    md_content = ""
+    if md_path.exists():
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+
+    html_content = markdown.markdown(
+        md_content,
+        extensions=['fenced_code', 'codehilite', 'toc', 'tables']
+    )
+
+    return templates.TemplateResponse(
+        "linkedin.html",
+        {"request": request, "content": html_content}
+    )
+
+
 @app.get("/canvas", response_class=HTMLResponse)
 async def canvas(request: Request):
     """Canvas — Ada's live workspace"""
