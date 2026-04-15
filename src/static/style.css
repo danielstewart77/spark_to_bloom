@@ -1,14 +1,36 @@
+/* ============================================================
+   PALETTE ARCHIVE — Earthy Greens (restore Oct/Nov)
+   body background:  #ACE1AF (celadon)
+   nav/header:       #2E8B57 (sea green)
+   content boxes:    #2d2d2d (charcoal)
+   accent glow:      #4ee8fc / #21d4fd (warm cyan)
+   article links:    #4ee8fc
+   footer bg:        #0f3460
+   button:           #21d4fd
+   login container:  #39714c
+   login button bg:  #0f3460
+   thoughts-title:   #2d2d2d
+   back-link final:  #2d2d2d
+   ============================================================ */
+
+/* ============================================================
+   PALETTE — Summer Techy 2026
+   background:   #dce8f0  ice blue
+   hex pattern:  #b8cfe0  slightly darker ice blue
+   nav:          #162030  deep navy
+   content:      rgba(10, 14, 25, 0.90)  near-black, 10% transparent
+   accent:       #38bdf8  sky blue
+   accent glow:  #38bdf8 / #0ea5e9
+   ============================================================ */
+
 /* Enhanced Global Styles */
 body, html {
     height: 90%;
     margin: 0;
     font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
     font-size: small;
-    /* background: #F0FFF0; honeydew */
-    /* background: #90EE90; light green */
-    background: #ACE1AF; /* celadon */
-    /* background: #D0F0C0; tea green */
-    /* background: #71BC78; fern */
+    background-color: #dce8f0;
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%2756%27%20height%3D%27100%27%3E%0A%20%20%3Cpath%20d%3D%27M28%2066L0%2050L0%2016L28%200L56%2016L56%2050L28%2066L28%20100M56%20100L56%2050M0%20100L0%2050%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%23b8cfe0%27%20stroke-width%3D%271%27%20fill%3D%27none%27%20opacity%3D%270.6%27%2F%3E%0A%20%20%3Cpath%20d%3D%27M0%2016L12%2016L12%2033L44%2033L44%2016L56%2016%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%239ab8cc%27%20stroke-width%3D%270.8%27%20fill%3D%27none%27%2F%3E%0A%20%20%3Cpath%20d%3D%27M28%200L28%2012%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%239ab8cc%27%20stroke-width%3D%270.8%27%20fill%3D%27none%27%2F%3E%0A%20%20%3Cpath%20d%3D%27M28%2033L28%2050L14%2050L14%2066L28%2066%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%239ab8cc%27%20stroke-width%3D%270.8%27%20fill%3D%27none%27%2F%3E%0A%20%20%3Cpath%20d%3D%27M44%2033L44%2050L56%2050%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%239ab8cc%27%20stroke-width%3D%270.8%27%20fill%3D%27none%27%2F%3E%0A%20%20%3Cpath%20d%3D%27M0%2050L12%2050L12%2066L28%20100%27%0A%20%20%20%20%20%20%20%20stroke%3D%27%239ab8cc%27%20stroke-width%3D%270.7%27%20fill%3D%27none%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%270%27%20%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2756%27%20cy%3D%2716%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2756%27%20cy%3D%2750%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%2766%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%270%27%20%20cy%3D%2750%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%270%27%20%20cy%3D%2716%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%27100%27%20r%3D%272.2%27%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2712%27%20cy%3D%2716%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2744%27%20cy%3D%2716%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%2712%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2712%27%20cy%3D%2733%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2744%27%20cy%3D%2733%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%2733%27%20r%3D%272%27%20%20%20fill%3D%27%239ab8cc%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2728%27%20cy%3D%2750%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2714%27%20cy%3D%2750%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2744%27%20cy%3D%2750%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2714%27%20cy%3D%2766%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2712%27%20cy%3D%2750%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%20%20%3Ccircle%20cx%3D%2712%27%20cy%3D%2766%27%20r%3D%271.4%27%20fill%3D%27%239ab8cc%27%20opacity%3D%270.8%27%2F%3E%0A%3C%2Fsvg%3E");
     color: #e7e7de;
     line-height: 1.6;
     margin-bottom: 15px;
@@ -16,51 +38,40 @@ body, html {
 
 /* Enhanced Glow Effect */
 .glow {
-    text-shadow: 0 0 5px #4ee8fc, 0 0 10px #4ee8fc, 0 0 15px #21d4fd;
+    text-shadow: 0 0 5px #38bdf8, 0 0 10px #38bdf8, 0 0 15px #0ea5e9;
     padding-top: 2px;
     padding-bottom: 2px;
 }
 
-/* Header Styles */
-header {
-    /* forest green */
-    /* background-color: #228B22; */
-    /* sea green */
-    background-color: #2E8B57;
-    /* moss green */
-    /* background-color: #8A9A5B; */
-    /* hunter green */
-    /* background-color: #355E3B; */
-    /* olive drab */
-    /* background-color: #6B8E23; */
-    /* pine green */
-    /* background-color: #01796F; */
-    /* dark olive green */
-    /* background-color: #556B2F; */
-    padding: 0px;
-    text-align: center;
-    padding-top: 0px;
-    padding-bottom: 0px;
+/* Site title in nav */
+nav ul li.site-title a {
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-right: 1rem;
+    letter-spacing: 0.03em;
 }
 
 /* Main Content Styling */
+/* Content wrapper — provides consistent 2rem gutters for all pages */
+.content-wrapper {
+    padding: 0 2rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 main {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    max-width: 800px;
-    margin: auto;
+    display: block;
+    padding: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Footer Styling */
 footer {
     text-align: center;
     padding: 0px;
-    background-color: #0f3460;
     color: #e7e7de;
-    margin-bottom: 10px;;
+    margin-bottom: 10px;
 }
 
 /* Button Styling */
@@ -68,14 +79,14 @@ button {
     padding: 10px 20px;
     border: none;
     border-radius: 5px;
-    background-color: #21d4fd;
+    background-color: #38bdf8;
     color: white;
     cursor: pointer;
     transition: background-color 0.3s;
 }
 
 button:hover {
-    background-color: #4ee8fc;
+    background-color: #60cbf8;
 }
 
 /* Grid Layout for Buttons */
@@ -89,8 +100,14 @@ button:hover {
     width: 80%;
 }
 
+.grid-item-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
 .grid-item {
-    background-color: #2d2d2d;
+    background-color: rgba(10, 14, 25, 0.90);
     color: white;
     padding: 20px;
     height: 150px;
@@ -107,8 +124,8 @@ button:hover {
 }
 
 .hover-image {
-    opacity: 0; /* Make it invisible by default */
-    transition: opacity 0.3s ease-in-out; /* Smooth fade-in effect */
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
     position: absolute;
     top: -100px;
     left: 50%;
@@ -116,16 +133,16 @@ button:hover {
     width: 100px;
     height: 100px;
     border-radius: 8px;
-    pointer-events: none; /* Prevent interaction issues */
+    pointer-events: none;
 }
 
 .grid-item:hover .hover-image {
-    opacity: 1; /* Make the image visible on hover */
+    opacity: 1;
 }
 
 /* Navigation Bar Styling */
 nav {
-    background-color: #2E8B57;
+    background-color: #162030;
     padding: 0.5rem 2rem;
 }
 
@@ -134,10 +151,10 @@ nav ul {
     margin: 0;
     padding: 0;
     display: flex;
-    justify-content: flex-start; /* start by default, push login to end */
+    justify-content: flex-start;
     align-items: center;
     font-size: medium;
-    gap: 20px; /* spacing between items */
+    gap: 20px;
 }
 
 nav ul li a {
@@ -148,7 +165,7 @@ nav ul li a {
 }
 
 nav ul li a:hover {
-    color: #4ee8fc;
+    color: #38bdf8;
 }
 
 /* Special handling for the login/logout list item */
@@ -162,12 +179,12 @@ nav ul li.user-controls {
 /* User Controls Styling */
 .user-controls {
     display: flex;
-    justify-content: center;         /* center align both text and link */
+    justify-content: center;
     align-items: center;
-    gap: 10px;                       /* spacing between text and link */
-    margin-top: 1.5rem;              /* a bit more vertical spacing */
+    gap: 10px;
+    margin-top: 1.5rem;
     font-size: 0.9rem;
-    color: white;                   /* ensure contrast over green bg */
+    color: white;
 }
 
 .login-button,
@@ -175,7 +192,7 @@ nav ul li.user-controls {
 .user-link {
     padding: 6px 12px;
     border-radius: 5px;
-    background-color: #0f3460;
+    background-color: #0a1628;
     color: white;
     text-decoration: none;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -184,23 +201,21 @@ nav ul li.user-controls {
 .login-button:hover,
 .logout-button:hover,
 .user-link:hover {
-    background-color: #21d4fd;
+    background-color: #38bdf8;
     color: white;
 }
-
 
 /* Introduction Section Styling */
 #introduction {
     text-align: center;
     padding: 20px;
-    background-color: rgba(255, 255, 255, 0.1);
-    background-color: #2E8B57;
+    background-color: rgba(10, 14, 25, 0.90);
     border-radius: 10px;
     margin: 20px 0;
 }
 
 #introduction h2 {
-    color: #21d4fd;
+    color: #38bdf8;
     margin-bottom: 15px;
 }
 
@@ -211,7 +226,7 @@ nav ul li.user-controls {
 }
 
 .app {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(255, 255, 255, 0.1);
     padding: 15px;
     border-radius: 8px;
     transition: transform 0.3s ease-in-out;
@@ -222,7 +237,7 @@ nav ul li.user-controls {
 }
 
 .app h3 {
-    color: #4ee8fc;
+    color: #38bdf8;
 }
 
 .app p {
@@ -232,14 +247,14 @@ nav ul li.user-controls {
 /* Blog style*/
 /* Terminal-Style Intro Box */
 .terminal-box {
-    background-color: #2d2d2d;
+    background-color: rgba(10, 14, 25, 0.90);
     color: #e7e7de;
     padding: 20px;
     border-radius: 10px;
     font-family: 'Courier New', Courier, 'Lucida Console', monospace;
-    margin: 40px auto;
-    max-width: 700px;
-    min-width: 700px;
+    margin: 20px 0;
+    width: 100%;
+    box-sizing: border-box;
     line-height: 1.5;
 }
 
@@ -248,15 +263,15 @@ nav ul li.user-controls {
     font-size: 1.8rem;
     text-align: center;
     margin: 40px 0 20px;
-    color: #2d2d2d;
+    color: #162030;
 }
 
 /* Article List */
 .article-list {
     list-style: none;
     padding: 0;
-    max-width: 700px;
-    margin: auto;
+    width: 100%;
+    margin: 0;
 }
 
 .article-list li {
@@ -286,16 +301,16 @@ nav ul li.user-controls {
 
 /* Article Page */
 .article-container {
-    max-width: 700px;
-    min-width: 700px;
-    margin: 5px auto;
+    width: 100%;
+    margin: 5px 0;
     padding: 15px;
-    background-color: #2d2d2d;
+    background-color: rgba(10, 14, 25, 0.90);
     border-radius: 10px;
+    box-sizing: border-box;
 }
 
 .article-container h1 {
-    color: #4ee8fc;
+    color: #38bdf8;
     margin-bottom: 10px;
 }
 
@@ -311,9 +326,7 @@ nav ul li.user-controls {
     font-size: medium;
     font-weight: bold;
     margin-top: 5px;
-    color: #4ee8fc;
-    color: #2E8B57;
-    color: #2d2d2d;
+    color: #38bdf8;
     text-decoration: none;
 }
 
@@ -323,68 +336,211 @@ nav ul li.user-controls {
 
 .markdown-style {
     font-family: 'Courier New', monospace;
-    background-color: #2d2d2d;
-    border: 1px solid #ddd;
+    background-color: rgba(10, 14, 25, 0.90);
+    border: 1px solid #2a3a4a;
     padding: 1rem;
     border-radius: 8px;
     white-space: pre-wrap;
     overflow-x: auto;
-  }
-  
-  .markdown-style code {
+}
+
+.markdown-style code {
     display: block;
-    background: #2d2d2d;
+    background: rgba(10, 14, 25, 0.90);
     padding: 0.5em;
     border-radius: 4px;
     margin: 1em 0;
     font-family: inherit;
-  }
+}
 
-  .login-container {
-    background-color: #39714c;
+.login-container {
+    background-color: #162030;
     padding: 2rem;
     border-radius: 10px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     color: #fff;
     width: 320px;
-  }
+}
 
-  label {
+label {
     display: block;
     margin-bottom: 0.5rem;
     font-weight: bold;
-  }
+}
 
-  input[type="text"],
-  input[type="password"] {
+input[type="text"],
+input[type="password"] {
     width: 100%;
     padding: 0.5rem;
     margin-bottom: 1rem;
     border: none;
     border-radius: 5px;
-  }
+}
 
-  nav .login-button {
+nav .login-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 6px 12px;
     line-height: 1;
-    height: auto; /* override 100% */
-  }
-  nav ul li.user-controls {
+    height: auto;
+}
+
+nav ul li.user-controls {
     margin-left: auto;
     display: flex;
     align-items: center;
     padding-top: 2px;
-  }
+}
 
-  .article-container a {
-    color: #4ee8fc;
-    text-shadow: 0 0 5px #4ee8fc, 0 0 10px #21d4fd;
+.article-container a {
+    color: #38bdf8;
+    text-shadow: 0 0 5px #38bdf8, 0 0 10px #0ea5e9;
     text-decoration: underline;
 }
 
 .article-container a:hover {
-    color: #21d4fd; /* Or white for high contrast on hover */
+    color: #60cbf8;
+}
+
+/* ============================================================
+   NAV — INNER LAYOUT (desktop & mobile shared structure)
+   ============================================================ */
+
+.nav-inner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Brand — always visible */
+.nav-brand {
+    font-size: 1.1rem;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    color: #e7e7de;
+    text-decoration: none;
+    margin-right: 1rem;
+    font-family: 'Fira Code', monospace;
+    flex-shrink: 0;
+}
+
+.nav-brand:hover {
+    color: #38bdf8;
+}
+
+/* Hamburger button — hidden on desktop */
+.nav-toggle {
+    display: none;
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #e7e7de;
+    font-size: 1.2rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: auto;
+    line-height: 1;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.nav-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #38bdf8;
+    border-color: #38bdf8;
+}
+
+/* ============================================================
+   RESPONSIVE — TABLET (≤1024px)
+   ============================================================ */
+
+@media (max-width: 1024px) {
+    .grid-container {
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+    }
+}
+
+/* ============================================================
+   RESPONSIVE — MOBILE (≤768px)
+   ============================================================ */
+
+@media (max-width: 768px) {
+    /* Nav */
+    nav {
+        padding: 0.5rem 1rem;
+    }
+
+    .nav-toggle {
+        display: block;
+    }
+
+    /* Hide nav links by default — id selector beats nav ul's display:flex */
+    #nav-links {
+        display: none;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        width: 100%;
+        padding: 0.5rem 0 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        margin-top: 0.5rem;
+        font-size: medium;
+    }
+
+    #nav-links.open {
+        display: flex;
+    }
+
+    #nav-links li {
+        width: 100%;
+    }
+
+    #nav-links li a {
+        display: block;
+        padding: 0.65rem 0;
+        font-size: 1rem;
+    }
+
+    #nav-links li.user-controls {
+        margin-left: 0;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Content */
+    .content-wrapper {
+        padding: 0 1rem;
+    }
+
+    .terminal-box {
+        padding: 12px;
+        font-size: 0.85rem;
+    }
+
+    /* Grid: 2 columns on mobile */
+    .grid-container {
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+    }
+
+    /* Applications: stack vertically */
+    .applications {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* Login container: full width */
+    .login-container {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .article-container {
+        padding: 12px;
+    }
+
+    .thoughts-title {
+        font-size: 1.4rem;
+    }
 }

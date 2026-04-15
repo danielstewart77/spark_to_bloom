@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="12" fill="#0a0e19"/>
+
+  <!-- Llama silhouette (geometric, sky blue) -->
+
+  <!-- Body -->
+  <ellipse cx="50" cy="67" rx="20" ry="13" fill="#38bdf8"/>
+
+  <!-- Neck -->
+  <path d="M44,59 L43,37 L57,37 L56,59 Z" fill="#38bdf8"/>
+
+  <!-- Head (oval, slightly forward) -->
+  <ellipse cx="51" cy="29" rx="10" ry="9" fill="#38bdf8"/>
+
+  <!-- Left ear (banana curve) -->
+  <path d="M45,22 Q41,9 47,9 Q52,9 49,22 Z" fill="#38bdf8"/>
+  <!-- Right ear -->
+  <path d="M57,22 Q61,9 55,9 Q50,9 53,22 Z" fill="#38bdf8"/>
+
+  <!-- Eye -->
+  <circle cx="55" cy="27" r="2.2" fill="#0a0e19"/>
+
+  <!-- Snout (slight protrusion forward) -->
+  <ellipse cx="58" cy="33" rx="5.5" ry="4" fill="#38bdf8"/>
+  <!-- Nostril -->
+  <circle cx="61" cy="34" r="1.2" fill="#0a0e19" opacity="0.55"/>
+
+  <!-- Legs (4) -->
+  <rect x="34" y="77" width="6" height="16" rx="3" fill="#38bdf8"/>
+  <rect x="43" y="77" width="6" height="16" rx="3" fill="#38bdf8"/>
+  <rect x="52" y="77" width="6" height="16" rx="3" fill="#38bdf8"/>
+  <rect x="61" y="77" width="6" height="16" rx="3" fill="#38bdf8"/>
+
+  <!-- Tail -->
+  <ellipse cx="30" cy="62" rx="5" ry="4" fill="#38bdf8" opacity="0.85"/>
+</svg>
