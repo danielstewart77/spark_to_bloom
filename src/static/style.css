@@ -107,23 +107,14 @@ button:hover {
 }
 
 .linkedin-inline-link {
-    display: inline-block;
-    margin-top: 4px;
+    display: inline;
     opacity: 0.85;
     transition: opacity 0.2s;
+    text-decoration: none;
 }
 
 .linkedin-inline-link:hover {
     opacity: 1;
-}
-
-.conn-line {
-    stroke-dasharray: 6 4;
-    animation: dash 2s linear infinite;
-}
-
-@keyframes dash {
-    to { stroke-dashoffset: -20; }
 }
 
 .grid-item {
