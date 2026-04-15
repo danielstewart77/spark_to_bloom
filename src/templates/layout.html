@@ -28,10 +28,24 @@
     <div class="content-wrapper">
         <div class="terminal-box">
             <p>> hey there, i'm daniel. feel free to look at my stuff. reach out, if you want to chat</p>
+            <a href="https://www.linkedin.com/in/danielstewart-ai/" target="_blank" rel="noopener" class="linkedin-inline-link" aria-label="Connect on LinkedIn">
+                <svg viewBox="0 0 200 38" height="38" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Person node -->
+                  <circle cx="19" cy="19" r="15" fill="#162030" stroke="#38bdf8" stroke-width="1.3"/>
+                  <circle cx="19" cy="14" r="5.5" fill="#38bdf8" opacity="0.9"/>
+                  <path d="M9,28 Q9,21 19,21 Q29,21 29,28" fill="#38bdf8" opacity="0.9"/>
+                  <!-- Animated dashed line -->
+                  <line x1="35" y1="19" x2="148" y2="19" stroke="#38bdf8" stroke-width="1.1" opacity="0.65" class="conn-line"/>
+                  <!-- Pulse dots -->
+                  <circle cx="75"  cy="19" r="2.2" fill="#38bdf8" opacity="0.5"/>
+                  <circle cx="105" cy="19" r="2.2" fill="#38bdf8" opacity="0.5"/>
+                  <circle cx="135" cy="19" r="2.2" fill="#38bdf8" opacity="0.5"/>
+                  <!-- LinkedIn badge -->
+                  <rect x="150" y="4" width="32" height="30" rx="6" fill="#0a66c2"/>
+                  <text x="166" y="24" text-anchor="middle" fill="white" font-family="Arial,sans-serif" font-size="17" font-weight="bold">in</text>
+                </svg>
+            </a>
         </div>
-        <a href="https://www.linkedin.com/in/danielstewart-ai/" class="linkedin-banner-link" target="_blank" rel="noopener">
-            <img src="/static/images/linkedin-banner.svg" alt="Connect with me on LinkedIn" class="linkedin-banner">
-        </a>
         {% block content %}{% endblock %}
         <footer class="terminal-box"><p></p></footer>
     </div>

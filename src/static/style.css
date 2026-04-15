@@ -106,24 +106,24 @@ button:hover {
     display: block;
 }
 
-.linkedin-banner-link {
-    display: block;
-    margin-top: 8px;
-    border-radius: 8px;
-    overflow: hidden;
-    transition: opacity 0.2s, box-shadow 0.2s;
+.linkedin-inline-link {
+    display: inline-block;
+    margin-top: 4px;
+    opacity: 0.85;
+    transition: opacity 0.2s;
 }
 
-.linkedin-banner-link:hover {
-    opacity: 0.88;
-    box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+.linkedin-inline-link:hover {
+    opacity: 1;
 }
 
-.linkedin-banner {
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: 8px;
+.conn-line {
+    stroke-dasharray: 6 4;
+    animation: dash 2s linear infinite;
+}
+
+@keyframes dash {
+    to { stroke-dashoffset: -20; }
 }
 
 .grid-item {
