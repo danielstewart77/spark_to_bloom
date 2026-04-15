@@ -106,6 +106,26 @@ button:hover {
     display: block;
 }
 
+.linkedin-banner-link {
+    display: block;
+    margin-top: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: opacity 0.2s, box-shadow 0.2s;
+}
+
+.linkedin-banner-link:hover {
+    opacity: 0.88;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+}
+
+.linkedin-banner {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+}
+
 .grid-item {
     background-color: rgba(10, 14, 25, 0.90);
     color: white;
