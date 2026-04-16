@@ -9,8 +9,14 @@ services:
       - "5000:5000"
     volumes:
       - /home/daniel/Storage/Dev/spark_to_bloom/src:/app
+      - hivemind-data:/data:ro
     networks:
       - traefik-global
+
+volumes:
+  hivemind-data:
+    external: true
+    name: hive_mind_sessions-db
 
 networks:
   traefik-global:
