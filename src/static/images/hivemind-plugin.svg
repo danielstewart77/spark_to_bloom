@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <filter id="hglow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="100" height="100" rx="12" fill="#0a0e19"/>
+
+  <!-- Six surrounding hexagons (flat-top, r=10) -->
+  <!-- East  (67.32, 50) -->
+  <path d="M67.32,40 L76,45 L76,55 L67.32,60 L58.66,55 L58.66,45 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+  <!-- West  (32.68, 50) -->
+  <path d="M32.68,40 L41.34,45 L41.34,55 L32.68,60 L24,55 L24,45 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+  <!-- NE   (58.66, 35) -->
+  <path d="M58.66,25 L67.32,30 L67.32,40 L58.66,45 L50,40 L50,30 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+  <!-- NW   (41.34, 35) -->
+  <path d="M41.34,25 L50,30 L50,40 L41.34,45 L32.68,40 L32.68,30 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+  <!-- SE   (58.66, 65) -->
+  <path d="M58.66,55 L67.32,60 L67.32,70 L58.66,75 L50,70 L50,60 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+  <!-- SW   (41.34, 65) -->
+  <path d="M41.34,55 L50,60 L50,70 L41.34,75 L32.68,70 L32.68,60 Z"
+        fill="#162030" stroke="#38bdf8" stroke-width="1" opacity="0.75"/>
+
+  <!-- Central hexagon — Ada, glowing -->
+  <path d="M50,40 L58.66,45 L58.66,55 L50,60 L41.34,55 L41.34,45 Z"
+        fill="#38bdf8" filter="url(#hglow)"/>
+
+  <!-- Center mark -->
+  <circle cx="50" cy="50" r="3.5" fill="#0a0e19"/>
+  <circle cx="50" cy="50" r="1.5" fill="#38bdf8"/>
+</svg>

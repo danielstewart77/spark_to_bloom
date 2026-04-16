@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from graph_data import get_graph_data
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -22,6 +23,9 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
+# Lucent graph database path (read-only, mounted via Docker volume)
+LUCENT_DB = os.getenv("LUCENT_DB_PATH", "/data/lucent.db")
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Home page"""
@@ -36,6 +40,58 @@ async def about(request: Request):
 async def pullrequests(request: Request):
     """Pull requests page"""
     return templates.TemplateResponse("pullrequests.html", {"request": request})
+
+@app.get("/linkedin", response_class=HTMLResponse)
+async def linkedin(request: Request):
+    """LinkedIn — staged posts before publishing"""
+    md_path = BASE_DIR / "templates" / "linkedin" / "ada.md"
+    md_content = ""
+    if md_path.exists():
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+
+    html_content = markdown.markdown(
+        md_content,
+        extensions=['fenced_code', 'codehilite', 'toc', 'tables']
+    )
+
+    return templates.TemplateResponse(
+        "linkedin.html",
+        {"request": request, "content": html_content}
+    )
+
+
+@app.get("/canvas", response_class=HTMLResponse)
+async def canvas(request: Request):
+    """Canvas — Ada's live workspace"""
+    md_path = BASE_DIR / "templates" / "canvas.md"
+    md_content = ""
+    if md_path.exists():
+        with open(md_path, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+
+    html_content = markdown.markdown(
+        md_content,
+        extensions=['fenced_code', 'codehilite', 'toc', 'tables']
+    )
+
+    return templates.TemplateResponse(
+        "canvas.html",
+        {"request": request, "content": html_content}
+    )
+
+
+@app.get("/graph/data")
+async def graph_data():
+    """Graph data endpoint -- returns nodes and edges from Lucent DB as JSON."""
+    return get_graph_data(LUCENT_DB)
+
+
+@app.get("/graph", response_class=HTMLResponse)
+async def graph(request: Request):
+    """Graph visualization page -- Cytoscape.js force-directed layout."""
+    return templates.TemplateResponse("graph.html", {"request": request})
+
 
 @app.get("/pages/{subpath:path}", response_class=HTMLResponse)
 async def page(request: Request, subpath: str):
