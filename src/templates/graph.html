@@ -138,7 +138,7 @@
 
   var statusEl = document.getElementById('graph-status');
 
-  fetch('/graph/data')
+  fetch('/graph/public-data')
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
       statusEl.style.display = 'none';

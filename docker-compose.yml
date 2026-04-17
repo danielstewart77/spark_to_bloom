@@ -5,20 +5,15 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+      - GRAPH_API_URL=http://server:8420
     ports:
       - "5000:5000"
     volumes:
       - /home/daniel/Storage/Dev/spark_to_bloom/src:/app
-      - hivemind-data:/data:ro
     networks:
-      - traefik-global
-
-volumes:
-  hivemind-data:
-    external: true
-    name: hive_mind_sessions-db
+      - hivemind
 
 networks:
-  traefik-global:
+  hivemind:
     external: true
-    name: traefik-global
+    name: hivemind
