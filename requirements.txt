@@ -1,5 +1,5 @@
 python-dotenv
-fastapi
+fastapi<0.130.0
 uvicorn[standard]
 openai
 markdown

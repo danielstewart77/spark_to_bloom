@@ -1,94 +1,39 @@
 """API tests for /graph and /graph/data endpoints."""
 
 import os
-import sqlite3
-import tempfile
+import sys
+from unittest.mock import patch
 
 import pytest
 
-# Ensure src is importable
-import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import main as main_mod
+from starlette.testclient import TestClient
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS nodes (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_id    TEXT    NOT NULL,
-    type        TEXT    NOT NULL,
-    name        TEXT    NOT NULL,
-    first_name  TEXT,
-    last_name   TEXT,
-    properties  TEXT    DEFAULT '{}',
-    data_class  TEXT,
-    tier        TEXT,
-    source      TEXT,
-    as_of       TEXT,
-    created_at  REAL,
-    updated_at  REAL,
-    UNIQUE(agent_id, name)
-);
+_SAMPLE = {
+    "nodes": [
+        {"id": "1", "label": "Daniel", "type": "Person", "properties": {}},
+        {"id": "2", "label": "Python", "type": "Concept", "properties": {}},
+    ],
+    "edges": [
+        {"source": "1", "target": "2", "label": "KNOWS"},
+    ],
+}
 
-CREATE TABLE IF NOT EXISTS edges (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_id    TEXT    NOT NULL,
-    source_id   INTEGER NOT NULL REFERENCES nodes(id),
-    target_id   INTEGER NOT NULL REFERENCES nodes(id),
-    type        TEXT    NOT NULL,
-    as_of       TEXT,
-    source      TEXT,
-    data_class  TEXT,
-    tier        TEXT,
-    created_at  REAL,
-    UNIQUE(source_id, target_id, type)
-);
-"""
+_EMPTY = {"nodes": [], "edges": []}
+_ERROR = {"nodes": [], "edges": [], "error": "connection refused"}
 
 
 @pytest.fixture()
-def tmp_db(tmp_path):
-    """Create a temporary Lucent DB with sample data and set env var."""
-    db_path = str(tmp_path / "lucent.db")
-    conn = sqlite3.connect(db_path)
-    conn.executescript(SCHEMA_SQL)
-    conn.execute(
-        "INSERT INTO nodes (agent_id, type, name, first_name) VALUES (?, ?, ?, ?)",
-        ("ada", "Person", "Daniel Stewart", "Daniel")
-    )
-    conn.execute(
-        "INSERT INTO nodes (agent_id, type, name) VALUES (?, ?, ?)",
-        ("ada", "Concept", "Python")
-    )
-    conn.execute(
-        "INSERT INTO edges (agent_id, source_id, target_id, type) VALUES (?, ?, ?, ?)",
-        ("ada", 1, 2, "KNOWS")
-    )
-    conn.commit()
-    conn.close()
-
-    old_val = os.environ.get("LUCENT_DB_PATH")
-    os.environ["LUCENT_DB_PATH"] = db_path
-    yield db_path
-    if old_val is None:
-        os.environ.pop("LUCENT_DB_PATH", None)
-    else:
-        os.environ["LUCENT_DB_PATH"] = old_val
-
-
-@pytest.fixture()
-def client(tmp_db):
-    """TestClient that uses the tmp_db fixture."""
-    # Re-import main after env var is set so LUCENT_DB picks it up
-    import importlib
-    import main as main_mod
-    importlib.reload(main_mod)
-    from starlette.testclient import TestClient
+def client():
     return TestClient(main_mod.app)
 
 
 def test_graph_data_returns_json(client):
     """GET /graph/data returns 200 with JSON body containing 'nodes' and 'edges'."""
-    resp = client.get("/graph/data")
+    with patch("main.get_graph_data", return_value=_SAMPLE):
+        resp = client.get("/graph/data")
     assert resp.status_code == 200
     data = resp.json()
     assert "nodes" in data
@@ -97,37 +42,28 @@ def test_graph_data_returns_json(client):
     assert len(data["edges"]) == 1
 
 
-def test_graph_data_uses_lucent_db_path_env(tmp_path):
-    """Endpoint reads from LUCENT_DB_PATH env var."""
-    db_path = str(tmp_path / "custom.db")
-    conn = sqlite3.connect(db_path)
-    conn.executescript(SCHEMA_SQL)
-    conn.execute(
-        "INSERT INTO nodes (agent_id, type, name) VALUES (?, ?, ?)",
-        ("ada", "Agent", "Ada")
-    )
-    conn.commit()
-    conn.close()
+def test_graph_data_forwards_limit_param(client):
+    """limit query param is forwarded to get_graph_data."""
+    with patch("main.get_graph_data", return_value=_EMPTY) as mock_fn:
+        client.get("/graph/data?limit=50")
+    mock_fn.assert_called_once_with(main_mod.GRAPH_API_URL, limit=50)
 
-    old_val = os.environ.get("LUCENT_DB_PATH")
-    os.environ["LUCENT_DB_PATH"] = db_path
 
-    import importlib
-    import main as main_mod
-    importlib.reload(main_mod)
-    from starlette.testclient import TestClient
-    tc = TestClient(main_mod.app)
+def test_graph_data_default_limit(client):
+    """Default limit of 400 is used when not specified."""
+    with patch("main.get_graph_data", return_value=_EMPTY) as mock_fn:
+        client.get("/graph/data")
+    mock_fn.assert_called_once_with(main_mod.GRAPH_API_URL, limit=400)
 
-    resp = tc.get("/graph/data")
+
+def test_graph_data_propagates_upstream_error(client):
+    """When upstream returns error dict, endpoint still returns 200 with empty lists."""
+    with patch("main.get_graph_data", return_value=_ERROR):
+        resp = client.get("/graph/data")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["nodes"]) == 1
-    assert data["nodes"][0]["label"] == "Ada"
-
-    if old_val is None:
-        os.environ.pop("LUCENT_DB_PATH", None)
-    else:
-        os.environ["LUCENT_DB_PATH"] = old_val
+    assert data["nodes"] == []
+    assert data["edges"] == []
 
 
 def test_graph_page_returns_html(client):
@@ -141,26 +77,3 @@ def test_graph_page_contains_cytoscape_reference(client):
     """GET /graph response body contains 'cytoscape' (CDN script tag)."""
     resp = client.get("/graph")
     assert "cytoscape" in resp.text.lower()
-
-
-def test_graph_data_handles_missing_db(tmp_path):
-    """GET /graph/data when DB does not exist returns JSON with empty nodes/edges."""
-    old_val = os.environ.get("LUCENT_DB_PATH")
-    os.environ["LUCENT_DB_PATH"] = str(tmp_path / "nonexistent.db")
-
-    import importlib
-    import main as main_mod
-    importlib.reload(main_mod)
-    from starlette.testclient import TestClient
-    tc = TestClient(main_mod.app)
-
-    resp = tc.get("/graph/data")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["nodes"] == []
-    assert data["edges"] == []
-
-    if old_val is None:
-        os.environ.pop("LUCENT_DB_PATH", None)
-    else:
-        os.environ["LUCENT_DB_PATH"] = old_val

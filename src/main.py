@@ -23,8 +23,8 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
-# Lucent graph database path (read-only, mounted via Docker volume)
-LUCENT_DB = os.getenv("LUCENT_DB_PATH", "/data/lucent.db")
+# hive_mind gateway URL for graph data
+GRAPH_API_URL = os.getenv("GRAPH_API_URL", "http://server:8420")
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -82,9 +82,22 @@ async def canvas(request: Request):
 
 
 @app.get("/graph/data")
-async def graph_data():
-    """Graph data endpoint -- returns nodes and edges from Lucent DB as JSON."""
-    return get_graph_data(LUCENT_DB)
+async def graph_data(limit: int = 400):
+    """Graph data endpoint -- full dataset, internal use."""
+    return get_graph_data(GRAPH_API_URL, limit=limit)
+
+
+@app.get("/graph/public-data")
+async def graph_public_data(limit: int = 400):
+    """Public graph data -- Person nodes stripped (no private contact info)."""
+    data = get_graph_data(GRAPH_API_URL, limit=limit)
+    public_nodes = [n for n in data.get("nodes", []) if n.get("type") != "Person"]
+    public_ids = {n["id"] for n in public_nodes}
+    public_edges = [
+        e for e in data.get("edges", [])
+        if e.get("source") in public_ids and e.get("target") in public_ids
+    ]
+    return {"nodes": public_nodes, "edges": public_edges}
 
 
 @app.get("/graph", response_class=HTMLResponse)

@@ -1,17 +1,21 @@
 {% extends "layout.html" %}
 {% block content %}
-<link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}">
 <style>
   .canvas-banner {
     display: block;
     width: 100%;
+    margin: 1.5rem 0 0.5rem;
+    border-radius: 10px;
+    overflow: hidden;
     background: #090912;
     line-height: 0;
+    max-height: 160px;
   }
   .canvas-banner svg {
     display: block;
     width: 100%;
     height: auto;
+    max-height: 160px;
   }
   .canvas-content {
     font-family: 'Fira Code', 'Consolas', monospace;
@@ -20,6 +24,12 @@
     margin: 1.5rem 0;
   }
 </style>
+
+<main>
+  <article class="article-container canvas-content">
+    {{ content|safe }}
+  </article>
+</main>
 
 <div class="canvas-banner">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">
@@ -152,11 +162,6 @@
   </svg>
 </div>
 
-<main>
-  <article class="article-container canvas-content">
-    {{ content|safe }}
-  </article>
-</main>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>

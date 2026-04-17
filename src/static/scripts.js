@@ -25,6 +25,10 @@ function updateFooterQuote() {
     document.querySelector('footer p').textContent = quote;
 }
 
+function toggleNav() {
+    document.getElementById('nav-links').classList.toggle('open');
+}
+
 function showImage(index) {
     const img = document.getElementById(`hover-image-${index}`);
     if (img) img.style.display = "visible";
