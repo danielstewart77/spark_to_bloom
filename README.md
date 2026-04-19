@@ -1,62 +1,174 @@
-# Flask Query and Document Processing API
+# Spark to Bloom
 
-This repository contains a Flask application designed for querying and document processing. The application integrates with OpenAI's GPT-3.5-turbo model for handling specific queries and offers functionalities for uploading and processing documents.
+Spark to Bloom is a FastAPI site that serves Daniel's public-facing content and a protected operator surface for Hive Mind. It combines static and Markdown-backed pages with authenticated tools for the live console and graph viewer.
 
-## Features
+## What the project does
 
-- **Query Interpretation**: Uses OpenAI's GPT-3.5-turbo model to interpret and respond to queries about programming, contract processing, and travel.
-- **Contract Processing**: Uses OpenAI's `gpt-3.5-turbo-1106` & `gpt-4-1106-preview` to upload and process documents,
-  breaking contracts into `sections` `[{'name':'', 'content': ''}]`.
-- **Travel Advice**: Uses OpenAI's `gpt-3.5-turbo`, `gpt-3.5-turbo-1106`, & `dall-e-3` to take a destination,
-  give you travel advice, an image, a google map, and several point of interest near the destination
-- **CORS Enabled**: Cross-Origin Resource Sharing (CORS) setup for broad accessibility.
-- **SSL Support**: Can run HTTPS locally if you have self-signed certs (othrwise remove the line `ssl_context=('cert.pem', 'key.pem')` in the `server.py` file).
+- Serves the public website content for `sparktobloom.com`
+- Renders Markdown-backed pages such as Canvas and LinkedIn content
+- Provides username/password authentication for protected pages
+- Proxies Hive Mind session data into a live console UI
+- Proxies Hive Mind graph data into a protected graph viewer
 
-## Installation
+## Current architecture
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/danielstewart77/GptService.git
+Spark to Bloom is not the Hive Mind backend. It is the website and auth/proxy layer in front of it.
 
-## Endpoints
-- /query: POST method to submit queries.
-- /upload: POST method for file uploads. (This endpoint can be called directly,
-  but is also called by the html controls sent to the client when the interpreter believes the user wants to upload files.)
-- /: GET method, a simple health check endpoint that returns a happiness message.
+Browser
+- Loads public pages directly from Spark to Bloom
+- Accesses protected `/console` and `/graph` pages after login
+
+Spark to Bloom
+- FastAPI app in `src/main.py`
+- Jinja templates in `src/templates/`
+- Static assets in `src/static/`
+- SQLite auth database in `data/stb.db`
+
+Hive Mind gateway
+- Provides session and graph data over HTTP
+- Configured via `GATEWAY_API_URL` / `GRAPH_API_URL`
+
+## Main features
+
+### Public pages
+
+- `/`
+- `/about`
+- `/pullrequests`
+- `/canvas`
+- `/linkedin`
+- `/pages/{subpath}`
+
+Markdown-backed pages are rendered from files in `src/templates/`.
+
+### Authenticated pages
+
+- `/console`
+  Displays one card per recent Hive Mind session and attaches to passive observer streams.
+
+- `/graph`
+  Displays a Cytoscape-based graph view backed by Hive Mind graph data.
+
+### Auth flow
+
+- `/login`
+- `POST /login`
+- `POST /logout`
+
+Auth is backed by a local SQLite users table and signed session cookies.
+
+## Repository layout
+
+```text
+spark_to_bloom/
+├── src/
+│   ├── main.py
+│   ├── auth.py
+│   ├── graph_data.py
+│   ├── config.py
+│   ├── templates/
+│   └── static/
+├── scripts/
+│   └── create_user.py
+├── data/
+│   └── stb.db
+├── tests/
+├── Dockerfile
+├── docker-compose.yml
+└── requirements.txt
+```
 
 ## Requirements
-- Flask
-- Flask-CORS
-- python-dotenv
-- markdown
-- gunicorn
-- azure-identity
-- azure-keyvault-secrets
-- openai
-- OpenAI API Key
-- Google Maps API Key
 
-## Setup
-- Install Dependencies: Use pip install flask flask-cors to install required packages.
-- Configure OpenAI Key: Set your OpenAI API key in the environment or as a part of the services configuration.
+- Python 3.12
+- FastAPI
+- Uvicorn
+- Jinja2
+- Markdown
+- `python-multipart`
+- `bcrypt`
+- `itsdangerous`
 
-## Usage
-- Starting the Server: Run the application with python app.py. It listens on port 8000 and requires SSL certificates (cert.pem and key.pem).
-- Querying: Send POST requests with JSON payload to /query.
-- Uploading Files: Send POST requests with a file to /upload.
+For the protected console and graph pages to be useful, Spark to Bloom also needs access to a running Hive Mind gateway.
 
-## Security
-- Ensure SSL certificates are correctly set up for secure HTTPS communication.
-- Manage CORS settings according to your security requirements.
+## Configuration
 
-## Troubleshooting
-- Check SSL certificate paths if HTTPS setup fails.
-- Ensure the OpenAI API key is correctly configured.
+Important environment variables:
 
-## Contributing
-Contributions to enhance the application or add new features are welcome. Please follow standard Git practices for contributions.
+- `GATEWAY_API_URL`
+  Base URL for the Hive Mind gateway session APIs
+
+- `GRAPH_API_URL`
+  Fallback base URL for graph data if `GATEWAY_API_URL` is not set
+
+- `STB_SECRET_KEY`
+  Secret used for session signing
+
+- `STB_DB_PATH`
+  Path to the SQLite auth database
+
+The app defaults to:
+
+- gateway URL: `http://server:8420`
+- auth DB: `data/stb.db`
+
+## Local development
+
+Install dependencies:
+
+```bash
+cd /home/hivemind/dev/spark_to_bloom
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+```
+
+Run the app locally:
+
+```bash
+cd /home/hivemind/dev/spark_to_bloom
+venv/bin/python -m uvicorn main:app --app-dir src --host 0.0.0.0 --port 5000
+```
+
+## Docker
+
+Build and run with Compose:
+
+```bash
+cd /home/hivemind/dev/spark_to_bloom
+docker compose up -d --build frontend
+```
+
+The app is served on port `5000`.
+
+## Creating a login user
+
+Bootstrap or replace a website user:
+
+```bash
+cd /home/hivemind/dev/spark_to_bloom
+venv/bin/python scripts/create_user.py --username daniel --admin --replace
+```
+
+You can also pass `--password` non-interactively.
+
+## Testing
+
+Run the main Spark test suites:
+
+```bash
+cd /home/hivemind/dev/spark_to_bloom
+venv/bin/python -m pytest -q tests/test_auth.py
+venv/bin/python -m pytest -q tests/test_console_routes.py
+venv/bin/python -m pytest -q tests/test_graph_routes.py
+venv/bin/python -m pytest -q tests/test_graph_data.py
+```
+
+## Notes for operators
+
+- Static assets use file-mtime cache busting in the template renderer, so CSS and JS URLs update automatically when those files change
+- The live console depends on Hive Mind passive observer streams; if the gateway is unavailable, the page still renders but stream data will not populate
+- GitHub auth in Daniel's normal shell does not imply GitHub auth inside the Codex harness user environment
 
 ## License
-MIT
 
-i made a change
+No license file is currently defined in this repository.
