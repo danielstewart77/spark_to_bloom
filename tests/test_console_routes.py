@@ -1,7 +1,9 @@
 """Route tests for login and live console endpoints."""
 
+import json
 import os
 import sys
+import urllib.error
 from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
@@ -30,6 +32,29 @@ def test_console_redirects_to_login_when_unauthenticated(tmp_path, monkeypatch):
 
     assert response.status_code == 303
     assert response.headers["location"].startswith("/login?next=/console")
+
+
+def test_console_page_renders_when_session_preload_fails(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    with patch("main._gateway_json", AsyncMock(side_effect=RuntimeError("boom"))):
+        response = client.get("/console")
+
+    assert response.status_code == 200
+    assert "Hive Mind Live Console" in response.text
+
+
+def test_console_page_renders_preloaded_session_cards(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    with patch("main._gateway_json", AsyncMock(return_value=[
+        {"id": "sess-1", "mind_id": "nagatha", "status": "running", "last_active": 2000000001},
+    ])):
+        response = client.get("/console")
+
+    assert response.status_code == 200
+    assert 'data-session-id="sess-1"' in response.text
+    assert "waiting for live events" in response.text
 
 
 def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
@@ -77,3 +102,45 @@ def test_console_stream_proxies_sse(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
     assert "assistant" in response.text
+
+
+class _FakeResponse:
+    def __init__(self, lines):
+        self._lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def __iter__(self):
+        return iter(self._lines)
+
+
+def test_proxy_session_events_does_not_fabricate_session_closed_on_timeout():
+    with patch("main.urllib.request.urlopen", side_effect=OSError("timed out")):
+        events = list(main_mod._proxy_session_events("sess-1"))
+
+    assert events == [
+        "data: " + json.dumps({"type": "system", "content": "upstream_error: timed out"}) + "\n\n"
+    ]
+
+
+def test_proxy_session_events_preserves_real_session_closed():
+    response = _FakeResponse(
+        [
+            b'data: {"type":"assistant","content":"hello"}\n',
+            b"\n",
+            b'data: {"type":"session_closed","session_id":"sess-1"}\n',
+            b"\n",
+        ]
+    )
+
+    with patch("main.urllib.request.urlopen", return_value=response):
+        events = list(main_mod._proxy_session_events("sess-1"))
+
+    assert events == [
+        'data: {"type":"assistant","content":"hello"}\n\n',
+        'data: {"type":"session_closed","session_id":"sess-1"}\n\n',
+    ]
