@@ -57,6 +57,17 @@ def test_console_page_renders_preloaded_session_cards(tmp_path, monkeypatch):
     assert "waiting for live events" in response.text
 
 
+def test_console_page_renders_user_menu_control(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    with patch("main._gateway_json", AsyncMock(return_value=[])):
+        response = client.get("/console")
+
+    assert response.status_code == 200
+    assert "user-menu-button" in response.text
+    assert "log out" in response.text
+
+
 def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
     monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
     monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
