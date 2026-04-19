@@ -13,7 +13,23 @@
         </div>
     </section>
 
-    <section id="minds-grid" class="console-grid" aria-live="polite"></section>
+    <section id="minds-grid" class="console-grid" aria-live="polite">
+        {% for session in initial_sessions %}
+        <article class="mind-card" data-session-id="{{ session.id }}" data-status="{{ session.status }}">
+            <header class="mind-card-header">
+                <div>
+                    <span class="status-dot"></span>
+                    <span class="mind-name">{{ session.mind_id or "unknown" }}</span>
+                    <span class="session-short">· {{ session.id[:8] }}</span>
+                </div>
+                <span class="session-age" data-last-active="{{ session.last_active }}"></span>
+            </header>
+            <div class="card-feed">
+                <div class="feed-line event-system">waiting for live events…</div>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
 </main>
 
 <script>
@@ -22,6 +38,7 @@
     const statusEl = document.getElementById("console-status");
     const cards = new Map();
     const streams = new Map();
+    const initialSessions = {{ initial_sessions|tojson }};
 
     function shortId(value) {
         return (value || "").slice(0, 8);
@@ -36,8 +53,10 @@
 
     function ensureCard(session) {
         if (cards.has(session.id)) {
-            updateCardMeta(cards.get(session.id), session);
-            return cards.get(session.id);
+            const existing = cards.get(session.id);
+            updateCardMeta(existing, session);
+            connectStream(session.id);
+            return existing;
         }
 
         const card = document.createElement("article");
@@ -61,6 +80,14 @@
         return card;
     }
 
+    function registerExistingCards() {
+        grid.querySelectorAll(".mind-card").forEach(function (card) {
+            const sessionId = card.dataset.sessionId;
+            if (!sessionId) return;
+            cards.set(sessionId, card);
+        });
+    }
+
     function updateCardMeta(card, session) {
         card.dataset.status = session.status;
         card.querySelector(".mind-name").textContent = session.mind_id || "unknown";
@@ -78,6 +105,48 @@
         }
     }
 
+    function extractContentText(value) {
+        if (value === null || value === undefined) return "";
+        if (typeof value === "string") return value;
+        if (Array.isArray(value)) {
+            return value
+                .map(function (item) {
+                    if (typeof item === "string") return item;
+                    if (item && typeof item.text === "string") return item.text;
+                    if (item && typeof item.content === "string") return item.content;
+                    return "";
+                })
+                .filter(Boolean)
+                .join("");
+        }
+        if (typeof value === "object") {
+            if (typeof value.text === "string") return value.text;
+            if (typeof value.content === "string") return value.content;
+        }
+        return "";
+    }
+
+    function extractAssistantText(event) {
+        return (
+            extractContentText(event.content) ||
+            extractContentText(event.delta) ||
+            extractContentText(event.text) ||
+            extractContentText(event.message && event.message.content) ||
+            extractContentText(event.message && event.message.text) ||
+            ""
+        );
+    }
+
+    function extractUserText(event) {
+        return (
+            extractContentText(event.content) ||
+            extractContentText(event.text) ||
+            extractContentText(event.message) ||
+            extractContentText(event.message && event.message.content) ||
+            ""
+        );
+    }
+
     function renderLine(event, sessionId) {
         const card = cards.get(sessionId);
         if (!card) return;
@@ -87,10 +156,10 @@
 
         if (event.type === "assistant") {
             line.classList.add("event-assistant");
-            line.textContent = (event.mind_id || card.querySelector(".mind-name").textContent) + " > " + stringify(event.content || event.delta || event.text);
+            line.textContent = (event.mind_id || card.querySelector(".mind-name").textContent) + " > " + extractAssistantText(event);
         } else if (event.type === "user") {
             line.classList.add("event-user");
-            line.textContent = "user > " + stringify(event.content || event.text || event.message);
+            line.textContent = "user > " + extractUserText(event);
         } else if (event.type === "tool_use") {
             line.classList.add("event-tool");
             line.textContent = "[tool: " + stringify(event.name || event.tool_name) + "] " + stringify(event.input || event.arguments || event.args);
@@ -107,10 +176,7 @@
         }
 
         feed.appendChild(line);
-        const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 100;
-        if (nearBottom) {
-            feed.scrollTop = feed.scrollHeight;
-        }
+        feed.scrollTop = feed.scrollHeight;
     }
 
     function connectStream(sessionId) {
@@ -118,14 +184,18 @@
         const source = new EventSource("/api/console/" + sessionId + "/stream");
         source.onmessage = function (message) {
             try {
-                renderLine(JSON.parse(message.data), sessionId);
+                const event = JSON.parse(message.data);
+                renderLine(event, sessionId);
+                if (event.type === "session_closed") {
+                    source.close();
+                    streams.delete(sessionId);
+                }
             } catch (error) {
                 renderLine({type: "system", content: message.data}, sessionId);
             }
         };
         source.onerror = function () {
-            source.close();
-            streams.delete(sessionId);
+            statusEl.textContent = "stream reconnecting";
         };
         streams.set(sessionId, source);
     }
@@ -140,6 +210,12 @@
         statusEl.textContent = sessions.length + " sessions";
         sessions.forEach(ensureCard);
     }
+
+    registerExistingCards();
+    initialSessions.forEach(function (session) {
+        ensureCard(session);
+    });
+    statusEl.textContent = initialSessions.length + " sessions";
 
     loadSessions().catch(function () {
         statusEl.textContent = "upstream unavailable";

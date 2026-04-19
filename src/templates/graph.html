@@ -138,8 +138,13 @@
 
   var statusEl = document.getElementById('graph-status');
 
-  fetch('/graph/public-data')
-    .then(function(resp) { return resp.json(); })
+  fetch('/graph/public-data', { credentials: 'same-origin' })
+    .then(function(resp) {
+      if (!resp.ok) {
+        throw new Error('graph request failed: ' + resp.status);
+      }
+      return resp.json();
+    })
     .then(function(data) {
       statusEl.style.display = 'none';
 
@@ -264,6 +269,7 @@
     })
     .catch(function(err) {
       statusEl.textContent = 'Error loading graph: ' + err.message;
+      statusEl.style.display = 'block';
     });
 })();
 

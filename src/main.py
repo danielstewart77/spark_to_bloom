@@ -51,6 +51,14 @@ def _gateway_base_url() -> str:
 
 def _render_template(request: Request, template_name: str, **context) -> HTMLResponse:
     context.setdefault("current_user", get_current_user_from_request(request))
+    static_dir = BASE_DIR / "static"
+    context.setdefault(
+        "asset_versions",
+        {
+            "style.css": int((static_dir / "style.css").stat().st_mtime_ns),
+            "scripts.js": int((static_dir / "scripts.js").stat().st_mtime_ns),
+        },
+    )
     context["request"] = request
     return templates.TemplateResponse(request, template_name, context)
 
@@ -70,6 +78,27 @@ def _safe_next_path(next_path: str | None, fallback: str = "/console") -> str:
     if next_path and next_path.startswith("/") and not next_path.startswith("//"):
         return next_path
     return fallback
+
+
+def _filter_console_sessions(sessions: dict | list) -> list[dict]:
+    if not isinstance(sessions, list):
+        return []
+
+    now = int(time.time())
+    cutoff = now - 86400
+
+    filtered = [
+        session for session in sessions
+        if int(session.get("last_active", 0)) >= cutoff
+    ]
+    order = {"running": 0, "idle": 1, "closed": 2}
+    filtered.sort(
+        key=lambda session: (
+            order.get(session.get("status", "closed"), 9),
+            -float(session.get("last_active", 0)),
+        )
+    )
+    return filtered
 
 
 def _login_redirect_for(request: Request) -> RedirectResponse:
@@ -96,27 +125,21 @@ async def _gateway_json(path: str, params: dict | None = None) -> dict | list:
 
 def _proxy_session_events(session_id: str):
     url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}/events"
-    sent_closed = False
 
     try:
         request = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
-        with urllib.request.urlopen(request, timeout=65) as response:
+        with urllib.request.urlopen(request) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
                 if not line.startswith("data: "):
                     continue
                 yield f"{line}\n\n"
-                if '"type": "session_closed"' in line or '"type":"session_closed"' in line:
-                    sent_closed = True
     except urllib.error.HTTPError as exc:
         payload = {"type": "system", "content": f"upstream_error: {exc.code}"}
         yield f"data: {json.dumps(payload)}\n\n"
     except OSError as exc:
         payload = {"type": "system", "content": f"upstream_error: {exc}"}
         yield f"data: {json.dumps(payload)}\n\n"
-
-    if not sent_closed:
-        yield f"data: {json.dumps({'type': 'session_closed', 'session_id': session_id})}\n\n"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -186,7 +209,11 @@ async def logout():
 async def console(request: Request):
     if not get_current_user_from_request(request):
         return _login_redirect_for(request)
-    return _render_template(request, "console.html")
+    try:
+        sessions = _filter_console_sessions(await _gateway_json("/sessions"))
+    except Exception:
+        sessions = []
+    return _render_template(request, "console.html", initial_sessions=sessions)
 
 
 @app.get("/graph/data")
@@ -224,25 +251,7 @@ async def api_minds(user: dict = Depends(require_auth)):
 @app.get("/api/console/sessions")
 async def api_console_sessions(user: dict = Depends(require_auth)):
     del user
-    sessions = await _gateway_json("/sessions")
-    if not isinstance(sessions, list):
-        return []
-
-    now = int(time.time())
-    cutoff = now - 86400
-
-    filtered = [
-        session for session in sessions
-        if int(session.get("last_active", 0)) >= cutoff
-    ]
-    order = {"running": 0, "idle": 1, "closed": 2}
-    filtered.sort(
-        key=lambda session: (
-            order.get(session.get("status", "closed"), 9),
-            -float(session.get("last_active", 0)),
-        )
-    )
-    return filtered
+    return _filter_console_sessions(await _gateway_json("/sessions"))
 
 
 @app.get("/api/console/{session_id}/stream")

@@ -644,6 +644,7 @@ nav ul li.user-controls {
 
 .mind-card {
     min-height: 340px;
+    max-height: 680px;
     display: flex;
     flex-direction: column;
     background: linear-gradient(180deg, rgba(13, 17, 23, 0.98), rgba(10, 14, 25, 0.98));
