@@ -388,18 +388,12 @@ nav ul li.user-controls {
 }
 
 .user-avatar {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: linear-gradient(180deg, #38bdf8, #0ea5e9);
-    color: #0a1628;
-    font-size: 0.85rem;
-    font-weight: bold;
-    font-family: 'Fira Code', monospace;
-    text-transform: uppercase;
+    display: block;
+    object-fit: cover;
+    border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
 .user-menu-button {
@@ -465,6 +459,11 @@ nav ul li.user-controls {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
+    width: 100%;
+}
+
+#nav-links {
+    flex: 1;
 }
 
 /* Brand — always visible */

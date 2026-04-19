@@ -38,7 +38,11 @@
                             aria-haspopup="true"
                             onclick="toggleUserMenu(event)"
                         >
-                            <span class="user-avatar">{{ current_user.username[:1].upper() }}</span>
+                            <img
+                                src="{{ request.url_for('static', path='images/cyborg_me.png') }}"
+                                alt="{{ current_user.username }}"
+                                class="user-avatar"
+                            >
                         </button>
                         <div class="user-menu-panel">
                             <div class="user-menu-name">{{ current_user.username }}</div>
