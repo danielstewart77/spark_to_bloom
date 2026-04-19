@@ -6,3 +6,5 @@ markdown
 jinja2
 aiofiles
 python-multipart
+bcrypt
+itsdangerous
