@@ -1,0 +1,154 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="console-page">
+    <section class="console-hero terminal-box">
+        <div>
+            <p class="console-kicker">passive observer mode</p>
+            <h1>Hive Mind Live Console</h1>
+            <p>One card per session active in the last 24 hours. Streams are read-only and attach without injecting prompts.</p>
+        </div>
+        <div class="console-hero-meta">
+            <span>{{ current_user.username }}</span>
+            <span id="console-status">syncing</span>
+        </div>
+    </section>
+
+    <section id="minds-grid" class="console-grid" aria-live="polite"></section>
+</main>
+
+<script>
+(function () {
+    const grid = document.getElementById("minds-grid");
+    const statusEl = document.getElementById("console-status");
+    const cards = new Map();
+    const streams = new Map();
+
+    function shortId(value) {
+        return (value || "").slice(0, 8);
+    }
+
+    function relativeTime(timestamp) {
+        const seconds = Math.max(0, Math.floor(Date.now() / 1000 - Number(timestamp || 0)));
+        if (seconds < 60) return seconds + "s ago";
+        if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+        return Math.floor(seconds / 3600) + "h ago";
+    }
+
+    function ensureCard(session) {
+        if (cards.has(session.id)) {
+            updateCardMeta(cards.get(session.id), session);
+            return cards.get(session.id);
+        }
+
+        const card = document.createElement("article");
+        card.className = "mind-card";
+        card.dataset.sessionId = session.id;
+        card.innerHTML = `
+            <header class="mind-card-header">
+                <div>
+                    <span class="status-dot"></span>
+                    <span class="mind-name"></span>
+                    <span class="session-short"></span>
+                </div>
+                <span class="session-age"></span>
+            </header>
+            <div class="card-feed"></div>
+        `;
+        grid.appendChild(card);
+        cards.set(session.id, card);
+        updateCardMeta(card, session);
+        connectStream(session.id);
+        return card;
+    }
+
+    function updateCardMeta(card, session) {
+        card.dataset.status = session.status;
+        card.querySelector(".mind-name").textContent = session.mind_id || "unknown";
+        card.querySelector(".session-short").textContent = "· " + shortId(session.id);
+        card.querySelector(".session-age").textContent = relativeTime(session.last_active);
+    }
+
+    function stringify(value) {
+        if (value === null || value === undefined) return "";
+        if (typeof value === "string") return value;
+        try {
+            return JSON.stringify(value);
+        } catch (error) {
+            return String(value);
+        }
+    }
+
+    function renderLine(event, sessionId) {
+        const card = cards.get(sessionId);
+        if (!card) return;
+        const feed = card.querySelector(".card-feed");
+        const line = document.createElement("div");
+        line.className = "feed-line";
+
+        if (event.type === "assistant") {
+            line.classList.add("event-assistant");
+            line.textContent = (event.mind_id || card.querySelector(".mind-name").textContent) + " > " + stringify(event.content || event.delta || event.text);
+        } else if (event.type === "user") {
+            line.classList.add("event-user");
+            line.textContent = "user > " + stringify(event.content || event.text || event.message);
+        } else if (event.type === "tool_use") {
+            line.classList.add("event-tool");
+            line.textContent = "[tool: " + stringify(event.name || event.tool_name) + "] " + stringify(event.input || event.arguments || event.args);
+        } else if (event.type === "tool_result") {
+            line.classList.add("event-result");
+            line.textContent = "[result] " + stringify(event.content || event.result);
+        } else if (event.type === "session_closed") {
+            line.classList.add("event-system");
+            line.textContent = "— session closed —";
+            card.dataset.status = "closed";
+        } else {
+            line.classList.add("event-system");
+            line.textContent = "[" + stringify(event.type || "event") + "] " + stringify(event.content || event);
+        }
+
+        feed.appendChild(line);
+        const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 100;
+        if (nearBottom) {
+            feed.scrollTop = feed.scrollHeight;
+        }
+    }
+
+    function connectStream(sessionId) {
+        if (streams.has(sessionId)) return;
+        const source = new EventSource("/api/console/" + sessionId + "/stream");
+        source.onmessage = function (message) {
+            try {
+                renderLine(JSON.parse(message.data), sessionId);
+            } catch (error) {
+                renderLine({type: "system", content: message.data}, sessionId);
+            }
+        };
+        source.onerror = function () {
+            source.close();
+            streams.delete(sessionId);
+        };
+        streams.set(sessionId, source);
+    }
+
+    async function loadSessions() {
+        const response = await fetch("/api/console/sessions", {credentials: "same-origin"});
+        if (response.status === 401) {
+            window.location.href = "/login?next=/console";
+            return;
+        }
+        const sessions = await response.json();
+        statusEl.textContent = sessions.length + " sessions";
+        sessions.forEach(ensureCard);
+    }
+
+    loadSessions().catch(function () {
+        statusEl.textContent = "upstream unavailable";
+    });
+    setInterval(function () {
+        loadSessions().catch(function () {
+            statusEl.textContent = "upstream unavailable";
+        });
+    }, 10000);
+})();
+</script>
+{% endblock %}

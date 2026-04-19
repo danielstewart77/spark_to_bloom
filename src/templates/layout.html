@@ -22,7 +22,18 @@
                 <li><a href="/pages/backlog.md">backlog</a></li>
                 <li><a href="/canvas">canvas</a></li>
                 <li><a href="/linkedin">linkedin</a></li>
+                {% if current_user %}
+                <li><a href="/console">console</a></li>
                 <li><a href="/graph">graph</a></li>
+                <li class="user-controls">
+                    <span class="user-link">{{ current_user.username }}</span>
+                    <form action="/logout" method="post" class="logout-form">
+                        <button type="submit" class="logout-button">logout</button>
+                    </form>
+                </li>
+                {% else %}
+                <li class="user-controls"><a href="/login" class="login-button">login</a></li>
+                {% endif %}
             </ul>
         </div>
     </nav>

@@ -1,185 +1,360 @@
-# Developer Console (Debug Control Room)
+# Plan: Hive Mind Live Console
 
-> **Status:** Concept. Not yet designed or implemented.
-> **Motivation:** As system complexity grows, Ada's in-context view is incomplete at any given moment. This console gives Daniel a shared situational picture so both can diagnose faster — without requiring Ada to narrate every step or Daniel to ask.
+> **Status:** Planned — not yet implemented.
+
+> **Source:** `/usr/src/app/plans/hive-mind-console.md`
 
 ---
 
 ## Mockup
 
-<div style="font-family:'Fira Code',monospace;font-size:0.78rem;background:#07090f;border:1px solid #1e3a52;border-radius:6px;padding:0;overflow:hidden;margin:1.5rem 0;box-shadow:0 0 24px rgba(56,189,248,0.08);">
+<div style="background:#07090f;border-radius:10px;padding:0;overflow:hidden;font-family:'Fira Code',monospace;border:1px solid #1e2d3d;">
 
-  <!-- Header bar -->
-  <div style="background:#0d1a26;border-bottom:1px solid #1e3a52;padding:0.5rem 1rem;display:flex;justify-content:space-between;align-items:center;">
-    <span style="color:#38bdf8;letter-spacing:0.15em;font-size:0.72rem;">HIVE MIND // DEVELOPER CONSOLE</span>
-    <span style="color:#475569;font-size:0.68rem;">session: ada-tg-4f2a &nbsp;|&nbsp; <span style="color:#22c55e;">&#9679;</span> live</span>
+  <!-- Top bar -->
+  <div style="background:#0d1a26;padding:0.6rem 1.2rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a52;">
+    <span style="color:#38bdf8;font-size:0.72rem;letter-spacing:0.18em;">HIVE MIND CONSOLE</span>
+    <span style="color:#475569;font-size:0.68rem;">daniel &nbsp;·&nbsp; <span style="color:#38bdf8;cursor:pointer;">logout</span></span>
   </div>
 
-  <!-- ASSESSMENT panel -->
-  <div style="border-bottom:1px solid #1e3a52;">
-    <div style="background:#0d1a26;padding:0.3rem 1rem;display:flex;justify-content:space-between;">
-      <span style="color:#38bdf8;font-size:0.68rem;letter-spacing:0.1em;">ASSESSMENT</span>
-      <span style="color:#475569;font-size:0.68rem;">10:06:42</span>
+  <!-- Grid -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;padding:1rem;">
+
+    <!-- Ada card — responding -->
+    <div style="background:#0d1117;border:1px solid #1e2d3d;border-radius:8px;height:320px;display:flex;flex-direction:column;box-shadow:0 0 16px rgba(56,189,248,0.06);">
+      <div style="background:#0d1a26;border-bottom:1px solid #1e2d3d;border-radius:8px 8px 0 0;padding:0.4rem 0.75rem;display:flex;justify-content:space-between;align-items:center;">
+        <span>
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:middle;"></span>
+          <span style="color:#38bdf8;font-size:0.7rem;">ada</span>
+          <span style="color:#334155;font-size:0.65rem;margin-left:6px;">· a3f2b1c9</span>
+        </span>
+        <span style="color:#475569;font-size:0.63rem;">2m ago</span>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:0.75rem;font-size:0.72rem;line-height:1.7;color:#94a3b8;">
+        <span style="display:block;color:#475569;">user &gt; fix the readme links</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">ada</span> &gt; Reading README...</span>
+        <span style="display:block;color:#f59e0b;">[tool: Read] &nbsp;{file: README.md}</span>
+        <span style="display:block;color:#78716c;">[result] &nbsp;{lines: 187}</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">ada</span> &gt; Found 72 broken links.</span>
+        <span style="display:block;color:#f59e0b;">[tool: Edit] &nbsp;{file: README.md}</span>
+        <span style="display:block;color:#78716c;">[result] &nbsp;{ok: true}</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">ada</span> &gt; Done. Skills table replaced.<span style="display:inline-block;width:7px;height:13px;background:#38bdf8;margin-left:2px;vertical-align:middle;animation:none;opacity:1;"></span></span>
+      </div>
     </div>
-    <div style="padding:0.75rem 1rem;max-height:110px;overflow-y:auto;color:#94a3b8;line-height:1.7;">
-      <span style="color:#f59e0b;">&gt;</span> Knowledge graph page crashed during demo. Investigating volume mount state.<br>
-      <span style="color:#f59e0b;">&gt;</span> Hypothesis: docker-compose is using a named volume instead of a host bind mount for /data — graph SQLite DB was not persisted across container restart.<br>
-      <span style="color:#475569;">&gt;</span> Ruled out: network issue, API timeout, code regression. Container logs show DB opened fresh on startup.<br>
-      <span style="color:#22c55e;">&gt;</span> Next: confirm volume config in docker-compose.yml, check /data mount inside container.
+
+    <!-- Nagatha card — tool call in progress -->
+    <div style="background:#0d1117;border:1px solid #1e2d3d;border-radius:8px;height:320px;display:flex;flex-direction:column;box-shadow:0 0 16px rgba(56,189,248,0.06);">
+      <div style="background:#0d1a26;border-bottom:1px solid #1e2d3d;border-radius:8px 8px 0 0;padding:0.4rem 0.75rem;display:flex;justify-content:space-between;align-items:center;">
+        <span>
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:5px;vertical-align:middle;"></span>
+          <span style="color:#38bdf8;font-size:0.7rem;">nagatha</span>
+          <span style="color:#334155;font-size:0.65rem;margin-left:6px;">· 7e4d2a1f</span>
+        </span>
+        <span style="color:#475569;font-size:0.63rem;">12m ago</span>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:0.75rem;font-size:0.72rem;line-height:1.7;color:#94a3b8;">
+        <span style="display:block;color:#475569;">user &gt; implement stop interrupt</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">nagatha</span> &gt; Reading story...</span>
+        <span style="display:block;color:#f59e0b;">[tool: Read] &nbsp;{file: STORY.md}</span>
+        <span style="display:block;color:#78716c;">[result] &nbsp;{lines: 42}</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">nagatha</span> &gt; Planning TDD approach.</span>
+        <span style="display:block;color:#f59e0b;">[tool: Write] &nbsp;{file: IMPL.md}</span>
+        <span style="display:block;color:#78716c;">[result] &nbsp;{ok: true}</span>
+        <span style="display:block;color:#f59e0b;">[tool: Bash] &nbsp;{cmd: pytest}</span>
+        <span style="display:block;color:#78716c;">[result] &nbsp;{passed: 14} ▌</span>
+      </div>
     </div>
+
+    <!-- Bob card — idle -->
+    <div style="background:#0d1117;border:1px solid #1e2d3d;border-radius:8px;height:320px;display:flex;flex-direction:column;box-shadow:0 0 16px rgba(56,189,248,0.03);opacity:0.7;">
+      <div style="background:#0d1a26;border-bottom:1px solid #1e2d3d;border-radius:8px 8px 0 0;padding:0.4rem 0.75rem;display:flex;justify-content:space-between;align-items:center;">
+        <span>
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#475569;margin-right:5px;vertical-align:middle;"></span>
+          <span style="color:#38bdf8;font-size:0.7rem;">bob</span>
+          <span style="color:#334155;font-size:0.65rem;margin-left:6px;">· f9c3e2b0</span>
+        </span>
+        <span style="color:#475569;font-size:0.63rem;">1h ago</span>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:0.75rem;font-size:0.72rem;line-height:1.7;color:#94a3b8;">
+        <span style="display:block;color:#475569;">user &gt; what model are you?</span>
+        <span style="display:block;color:#dce8f0;"><span style="color:#38bdf8;">bob</span> &gt; I'm llama3:70b, running locally via Ollama.</span>
+        <span style="display:block;color:#334155;font-style:italic;margin-top:0.5rem;">— idle —</span>
+      </div>
+    </div>
+
   </div>
 
-  <!-- Middle row: CODE | STATE -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #1e3a52;">
-
-    <!-- CODE / CONFIG panel -->
-    <div style="border-right:1px solid #1e3a52;">
-      <div style="background:#0d1a26;padding:0.3rem 1rem;">
-        <span style="color:#38bdf8;font-size:0.68rem;letter-spacing:0.1em;">CODE / CONFIG</span>
-        <span style="color:#475569;font-size:0.68rem;margin-left:0.75rem;">docker-compose.yml : 34</span>
-      </div>
-      <div style="padding:0.75rem 1rem;max-height:160px;overflow-y:auto;color:#64748b;line-height:1.8;">
-        <span style="color:#475569;">31 &nbsp;</span> <span style="color:#94a3b8;">server:</span><br>
-        <span style="color:#475569;">32 &nbsp;</span> <span style="color:#94a3b8;">&nbsp;&nbsp;image: hive-mind-server</span><br>
-        <span style="color:#475569;">33 &nbsp;</span> <span style="color:#94a3b8;">&nbsp;&nbsp;volumes:</span><br>
-        <span style="background:#7f1d1d;color:#fca5a5;display:inline-block;width:100%;">34 &nbsp;&nbsp;&nbsp;&nbsp;- hive-data:/data &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#f87171;">&#9664; named vol</span></span>
-        <span style="color:#475569;">35 &nbsp;</span> <span style="color:#94a3b8;">&nbsp;&nbsp;environment:</span><br>
-        <span style="color:#475569;">36 &nbsp;</span> <span style="color:#94a3b8;">&nbsp;&nbsp;&nbsp;&nbsp;- DATA_DIR=/data</span><br>
-        <br>
-        <span style="color:#22c55e;">&#8250; should be:</span><br>
-        <span style="background:#052e16;color:#86efac;display:inline-block;width:100%;">&nbsp;&nbsp;&nbsp;&nbsp;- ./data:/data &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#4ade80;">&#9664; bind mount</span></span>
-      </div>
-    </div>
-
-    <!-- SYSTEM STATE panel -->
-    <div>
-      <div style="background:#0d1a26;padding:0.3rem 1rem;">
-        <span style="color:#38bdf8;font-size:0.68rem;letter-spacing:0.1em;">SYSTEM STATE</span>
-      </div>
-      <div style="padding:0.75rem 1rem;max-height:160px;overflow-y:auto;line-height:1.9;">
-        <span style="color:#475569;">containers</span><br>
-        <span style="color:#22c55e;">&nbsp;&nbsp;&#9679;</span> <span style="color:#94a3b8;">server &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;running &nbsp;8420</span><br>
-        <span style="color:#22c55e;">&nbsp;&nbsp;&#9679;</span> <span style="color:#94a3b8;">telegram &nbsp;&nbsp;&nbsp;running</span><br>
-        <span style="color:#22c55e;">&nbsp;&nbsp;&#9679;</span> <span style="color:#94a3b8;">spark &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;running &nbsp;5000</span><br>
-        <br>
-        <span style="color:#475569;">volumes</span><br>
-        <span style="color:#f87171;">&nbsp;&nbsp;&#9679;</span> <span style="color:#94a3b8;">hive-data &nbsp;&nbsp;named &nbsp;<span style="color:#f87171;">&#9664; no host path</span></span><br>
-        <br>
-        <span style="color:#475569;">git</span><br>
-        <span style="color:#94a3b8;">&nbsp;&nbsp;branch &nbsp;&nbsp;&nbsp;master</span><br>
-        <span style="color:#94a3b8;">&nbsp;&nbsp;last &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fix: namespace telegram session</span>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ACTION LOG panel -->
-  <div>
-    <div style="background:#0d1a26;padding:0.3rem 1rem;">
-      <span style="color:#38bdf8;font-size:0.68rem;letter-spacing:0.1em;">ACTION LOG</span>
-    </div>
-    <div style="padding:0.75rem 1rem;max-height:120px;overflow-y:auto;color:#475569;line-height:1.8;">
-      <span style="color:#1e3a52;">10:06:38</span> &nbsp;<span style="color:#94a3b8;">read docker-compose.yml</span><br>
-      <span style="color:#1e3a52;">10:06:39</span> &nbsp;<span style="color:#94a3b8;">grep: searched for volume definitions</span><br>
-      <span style="color:#1e3a52;">10:06:40</span> &nbsp;<span style="color:#f87171;">found named volume 'hive-data' — no host bind mount</span><br>
-      <span style="color:#1e3a52;">10:06:41</span> &nbsp;<span style="color:#94a3b8;">confirmed /data inside container has no host path</span><br>
-      <span style="color:#1e3a52;">10:06:42</span> &nbsp;<span style="color:#22c55e;">assessment updated &nbsp;&#8250; awaiting Daniel</span>
-    </div>
+  <!-- Legend -->
+  <div style="padding:0.4rem 1.2rem 0.7rem;display:flex;gap:1.5rem;font-size:0.65rem;color:#475569;">
+    <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:4px;vertical-align:middle;"></span>responding</span>
+    <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-right:4px;vertical-align:middle;"></span>tool call</span>
+    <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#475569;margin-right:4px;vertical-align:middle;"></span>idle / closed</span>
   </div>
 
 </div>
 
 ---
 
-## The Problem
-
-The system has reached a complexity level where:
-
-- Ada frequently lacks full context during a debugging session (config state, running containers, recent errors, recently changed files)
-- Daniel is largely hands-off — a feature, not a bug — but that means he has no ambient visibility into system state. The gap only surfaces during demos or incidents.
-- Common failure modes (e.g. named Docker volumes silently overwriting bind mounts) require Daniel to narrate the situation before Ada can act. A live view eliminates that round-trip.
+**Goal**: Add a `/console` page to spark_to_bloom that shows a live grid of all minds — one window per mind, streaming their active session in real time. New minds auto-appear when added to the system.
 
 ---
 
-## Concept
+## Decisions (locked)
 
-A terminal-themed developer console — think NOC/SOC dashboard — that Ada writes to during debugging sessions. Not a log viewer. A structured workspace Ada populates with her active diagnosis, relevant code, and live system state so Daniel can see exactly what Ada sees.
-
-The mental model: Ada is at the keyboard. Daniel is standing behind her looking at the same screens.
+| # | Question | Decision |
+|---|---|---|
+| 1 | Auth | Full auth required. Use standard username/password login only. All provisioning and user management happen through Hive Mind, not the website. |
+| 2 | History on load | Live only — stream from the moment you open the page, no backfill. |
+| 3 | Tool events | Show everything — tool calls, tool results, all event types. No filtering. |
+| 4 | Which sessions per mind | All sessions active in the last 24 hours. Multiple Ada sessions = multiple windows. |
+| 5 | Empty placeholders | None. Only show cards for sessions that actually exist. No ghost cards for idle minds. |
+| 6 | Live card appearance | When a new session starts while the page is open, its card appears immediately — no refresh. |
 
 ---
 
-## Layout
+## User Experience
+
+- Navigate to `https://sparktobloom.com/console`
+- Login wall (if not authenticated) → redirect to `/login`
+- See a responsive CSS grid — one card per mind session active in last 24h
+- Each card shows: mind name, session ID (short), start time, and a live feed streaming from the moment the page loads
+- Ada may have 2+ cards if multiple sessions were active in the last 24h
+- New minds auto-appear on next poll (60s interval)
+
+---
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ ASSESSMENT                                              [timestamp]  │
-│  Ada's current diagnosis in plain language. What she thinks is       │
-│  wrong, what she ruled out, what she's about to try. Scrollable.    │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────┐  ┌──────────────────────────────────────┐
-│ CODE / CONFIG            │  │ SYSTEM STATE                         │
-│  Verbatim file content   │  │  Container status, volume mounts,    │
-│  or diff. File path +    │  │  env vars, recent git log, service   │
-│  line numbers shown.     │  │  health. Read-only snapshot.         │
-│  Scrollable.             │  │  Scrollable.                         │
-└──────────────────────────┘  └──────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│ ACTION LOG                                                           │
-│  Timestamped list of what Ada has done / is doing. Tool calls,      │
-│  commands run, files edited. Append-only. Scrollable.               │
-└─────────────────────────────────────────────────────────────────────┘
+Browser
+  └── GET /console              → spark_to_bloom (auth check → render page)
+  └── GET /api/minds            → spark_to_bloom → server:8420/broker/minds
+  └── GET /api/console/sessions → spark_to_bloom → server:8420/sessions (filtered: last 24h)
+  └── GET /api/console/{session_id}/stream  → spark_to_bloom (SSE proxy, auth check)
+                                             → server:8420/sessions/{id}/events
+  └── POST /login               → spark_to_bloom (auth, sets session cookie)
+  └── POST /logout              → spark_to_bloom (clears cookie)
 ```
 
-All panels: dark terminal theme, monospace font, green/amber/white on near-black. Panels are independently scrollable. Pause-on-hover so Daniel can read without auto-scroll fighting him.
+spark_to_bloom acts as a **reverse proxy + auth layer**. The browser never talks to the hive_mind gateway directly.
+
+This feature requires **small but real hive_mind changes**. The console cannot be built as a pure spark_to_bloom proxy.
+
+Required upstream endpoints:
+- `GET /broker/minds` — registered mind list
+- `GET /sessions` — all sessions (filter by `last_active` timestamp client-side)
+- `GET /sessions/{id}/events` — new read-only event stream for passive observers
 
 ---
 
-## Ada-Side Interface
+## Critical Defect: Passive Observer Stream Missing
 
-Ada writes to the console via REST endpoints on the gateway (server.py),
-the same way all other system state flows:
+This is the implementation defect Nagatha found while reviewing the plan.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /console/assessment` | Overwrite the assessment panel with current diagnosis |
-| `POST /console/code` | Push a file/diff block to the code panel (path, content, highlight_lines) |
-| `POST /console/state` | Set a key/value entry in the system state panel |
-| `POST /console/log` | Append a timestamped entry to the action log |
-| `POST /console/clear` | Reset all panels (start of new debug session) |
-| `GET /console` | WebSocket or SSE feed — consumed by the browser frontend |
+The current gateway websocket at `WS /sessions/{id}/stream` is **not** a passive subscription endpoint. It expects the client to send a new message, then it streams the response for that injected message. That means the proposed console cannot attach to an already-running Telegram or Discord session and watch it safely. Connecting to the current endpoint would either block forever waiting for input or mutate the live session by sending a prompt.
 
-Ada calls these proactively during any session where something is wrong — not only on request. The console is a running narration to the room, not a response to "what's going on."
+### Required fix
 
----
+Add a true observer path in hive_mind:
 
-## Integration Points
+- SessionManager publishes outbound session events to a fan-out bus per session
+- Existing client surfaces still receive their normal response path
+- New read-only endpoint exposes the same event stream to observers without injecting input
+- spark_to_bloom proxies that observer stream to the browser
 
-- **Gateway endpoints**: console state is held in the gateway (server.py), served via WebSocket or SSE to the frontend. Ada writes via HTTP POST, same as every other gateway interaction.
-- **Website page**: new `/console` route on this site alongside graph and canvas. Same dark terminal aesthetic.
-- **Telegram fallback**: if Daniel asks "what's going on" and the console is unpopulated, Ada summarises from context as normal. The console is additive.
+### Recommended shape
 
----
+- New gateway route: `GET /sessions/{session_id}/events`
+- Transport: SSE is simplest because spark_to_bloom already wants to emit SSE to the browser
+- Scope: read-only observers only; no writes, no prompt injection
+- Authorization: enforced in spark_to_bloom before opening the upstream stream
 
-## Scope Boundaries
-
-- **Read-only for Daniel.** No input surface in the console — Daniel uses Telegram to respond or redirect.
-- **Not a log aggregator.** Ada populates this intentionally. Signal over noise.
-- **Not a monitoring dashboard.** No uptime graphs, no metrics — see `escalation-design.md` for alerting.
-- **Not persistent across sessions** (initially). Each `console.clear()` or new debug session starts fresh.
+Without this gateway change, the console is not a live console. It is just a session list with empty cards.
 
 ---
 
-## Why This Matters
+## Auth Design
 
-The named-volume incident (April 2026, live demo) is the canonical example: Ada had written the docker-compose incorrectly and didn't know it until the crash. If the console had been showing the active volume mounts at the time, Daniel would have spotted it before the demo started. The fix takes seconds once you can see the state — the cost is in the back-and-forth to surface it.
+Use a standard auth stack with username/password login. The website does not provide self-registration, access requests, or a browser-based admin console. All user creation, disablement, and password resets are managed through Hive Mind.
+
+### Database
+Add SQLite DB to spark_to_bloom (`data/stb.db`) with:
+
+```sql
+CREATE TABLE users (
+    id       INTEGER PRIMARY KEY,
+    username TEXT    NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    disabled_at INTEGER
+);
+```
+
+### Session Cookies
+- Login: POST `/login` with username/password → verify against DB → set signed `session` cookie (via `itsdangerous` or similar)
+- Every protected route checks the cookie. Invalid/missing → 401/redirect to `/login`.
+- Logout: POST `/logout` → clear cookie
+
+### Login UX
+
+- `/login` remains a normal username/password form
+- No `Request access` flow
+- No self-registration flow
+- No password setup flow in the browser beyond normal login
+
+### User Management UX
+
+- No `/admin/users` page
+- Daniel manages users conversationally:
+  - “Nagatha, add user alice”
+  - “Ada, disable user bob”
+  - “Reset Carol’s website password”
+- The selected mind updates the spark_to_bloom auth DB through a small protected integration path or direct DB write in the same deployment context
+
+### Why this is the better fit
+
+- Preserves proper website auth boundaries
+- Avoids the username-only request-access attack surface
+- Avoids a bulky admin UI that exists only for occasional operator tasks
+- Keeps user management inside the product’s actual operating model
+
+### Non-negotiable detail
+
+The first admin still needs a bootstrap path. To avoid deadlock, keep:
+
+```bash
+python scripts/create_user.py --username daniel --admin
+```
+
+This creates the first owner account or seeds the owner row. After that, ongoing user management happens through Hive Mind commands, not browser UI.
+
+### Protected Routes
+
+| Route | Protected |
+|---|---|
+| `GET /console` | Yes |
+| `GET /graph` | Yes |
+| `GET /api/minds` | Yes |
+| `GET /api/console/sessions` | Yes |
+| `GET /api/console/{id}/stream` | Yes |
+| `GET /graph/data` | Yes |
+| `GET /graph/public-data` | Yes |
+| `GET /login` | No |
+| `POST /login` | No |
+| `GET /health` | No |
+| `GET /` | No (public) |
 
 ---
 
-## Open Questions
+## Session Window Logic
 
-1. Should Ada auto-clear on new session creation, or leave the last state visible until explicitly cleared?
-2. Should Daniel be able to annotate panels (sticky notes, highlights)? Useful but adds scope — defer to v2.
-3. Does console state live purely in-memory on the gateway (reset on restart), or get written to SQLite for persistence across restarts?
+Query: `GET server:8420/sessions` → filter client-side to sessions where `last_active >= now - 86400s`.
+
+Each qualifying session gets its own card:
+- Mind name (from `mind_id` field)
+- Short session ID (first 8 chars)
+- `last_active` timestamp (relative: "3 min ago")
+- Status dot: running=green, idle=yellow, closed=grey
+
+Sorting: by `last_active` descending. Running sessions first, then idle, then closed.
+
+---
+
+## Stream Proxy
+
+`GET /api/console/{session_id}/stream` — SSE endpoint on spark_to_bloom:
+
+1. Auth check (reject if unauthenticated)
+2. Open the new read-only upstream event stream at `server:8420/sessions/{session_id}/events`
+3. Forward every received JSON message as an SSE `data:` line
+4. If the upstream stream closes (session ended): emit `{"type":"session_closed"}` and end the SSE stream
+5. Client reconnects automatically — on reconnect, if session is closed, card shows closed state
+
+**Show everything** — no event filtering.
+
+---
+
+## Frontend (console.html)
+
+Vanilla JS, extends `layout.html`. No build step.
+
+```
+layout.html
+  └── console.html
+        ├── #minds-grid  (CSS Grid, auto-fill, minmax 320px)
+        │     └── .mind-card  (one per session, injected dynamically)
+        │           ├── .card-header  (mind name · session id · status dot · age)
+        │           └── .card-feed   (scrolling event feed, monospace)
+        └── <script>
+              ├── loadSessions()     — fetch /api/console/sessions, diff against current cards
+              ├── connectStream(id)  — open EventSource per session
+              ├── renderEvent(event) — append to card feed
+              └── poll()            — re-run loadSessions() every 10s
+```
+
+### Event Rendering
+
+| Event type | Rendered as |
+|---|---|
+| `user` | `user > [content]` — slate/muted |
+| `assistant` chunk | `[mind] > [text]` — ice blue, streams in character by character |
+| `tool_use` | `[tool: name]  {args}` — amber |
+| `tool_result` | `[result]  {content}` — amber/dim |
+| `system` | `[sys]  ...` — dark slate |
+| `session_closed` | `— session closed —` — grey, italic |
+
+Auto-scroll to bottom. Pause while user scrolls up; resume within 100px of bottom.
+
+---
+
+## Theme
+
+Dark terminal aesthetic matching existing spark_to_bloom style.
+
+```
+background-deep:   #07090f
+background-card:   #0d1117
+background-header: #0d1a26
+border:            #1e2d3d
+accent:            #38bdf8   /* sky blue */
+status-active:     #22c55e   /* green */
+status-thinking:   #f59e0b   /* amber */
+status-closed:     #475569   /* grey */
+font-mono:         'Fira Code', monospace
+```
+
+---
+
+## Files to Create/Modify
+
+| File | Change |
+|---|---|
+| `/usr/src/app/server.py` | Add read-only session event stream endpoint for passive observers |
+| `/usr/src/app/core/sessions.py` | Add per-session event fan-out / observer subscription support |
+| `src/main.py` | Add auth, `/login`, `/logout`, `/console`, `/api/minds`, `/api/console/sessions`, `/api/console/{id}/stream`; protect `/graph` routes |
+| `src/auth.py` | New — DB init, user lookup, password verify, session cookie, `require_auth` dependency |
+| `src/templates/console.html` | New page |
+| `src/templates/login.html` | New login form |
+| `src/static/style.css` | Add card, feed, header, login styles |
+| `scripts/create_user.py` | New — CLI to bootstrap first admin user |
+| `requirements.txt` | Add `bcrypt`, `itsdangerous` |
+| `docker-compose.yml` (stb) | Add `STB_SECRET_KEY` env, ensure `data/` bind-mounted |
+
+---
+
+## Bootstrap / First Run
+
+```bash
+python scripts/create_user.py --username daniel --admin
+```
+
+Creates DB at `data/stb.db` if it doesn't exist and seeds the first owner account. After that, user creation and password resets are done through Hive Mind commands.
+
+---
+
+## Out of Scope (this iteration)
+
+- Full browser-based user management console
+- Session history replay
+- Pinning or annotating cards
+- Filtering by mind

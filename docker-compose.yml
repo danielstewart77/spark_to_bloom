@@ -6,10 +6,15 @@ services:
     environment:
       - ENVIRONMENT=production
       - GRAPH_API_URL=http://server:8420
+      - GATEWAY_API_URL=http://server:8420
+      - STB_SECRET_KEY=${STB_SECRET_KEY:-change-this-in-production}
+      - STB_DB_PATH=/data/stb.db
     ports:
       - "5000:5000"
     volumes:
-      - /home/daniel/Storage/Dev/spark_to_bloom/src:/app
+      - ./src:/app
+      - ./data:/data
+      - ./scripts:/scripts
     networks:
       - hivemind
 
