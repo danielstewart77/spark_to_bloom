@@ -164,3 +164,7 @@ cython_debug/
 local_secrets.env
 key.pem
 cert.pem
+
+# Private planning docs
+backlog/
+linkedin/

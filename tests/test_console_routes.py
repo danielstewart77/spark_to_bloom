@@ -48,13 +48,20 @@ def test_console_page_renders_preloaded_session_cards(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 
     with patch("main._gateway_json", AsyncMock(return_value=[
-        {"id": "sess-1", "mind_id": "nagatha", "status": "running", "last_active": 2000000001},
+        {
+            "id": "sess-1",
+            "mind_id": "nagatha",
+            "status": "running",
+            "last_active": 2000000001,
+            "summary": "Streaming test session",
+        },
     ])):
         response = client.get("/console")
 
     assert response.status_code == 200
     assert 'data-session-id="sess-1"' in response.text
-    assert "waiting for live events" in response.text
+    assert "watching live events" in response.text
+    assert "summary: Streaming test session" in response.text
 
 
 def test_console_page_renders_user_menu_control(tmp_path, monkeypatch):
@@ -134,6 +141,7 @@ def test_proxy_session_events_does_not_fabricate_session_closed_on_timeout():
         events = list(main_mod._proxy_session_events("sess-1"))
 
     assert events == [
+        "data: " + json.dumps({"type": "system", "content": "proxy_connected"}) + "\n\n",
         "data: " + json.dumps({"type": "system", "content": "upstream_error: timed out"}) + "\n\n"
     ]
 
@@ -152,6 +160,8 @@ def test_proxy_session_events_preserves_real_session_closed():
         events = list(main_mod._proxy_session_events("sess-1"))
 
     assert events == [
+        "data: " + json.dumps({"type": "system", "content": "proxy_connected"}) + "\n\n",
+        "data: " + json.dumps({"type": "system", "content": "upstream_connected"}) + "\n\n",
         'data: {"type":"assistant","content":"hello"}\n\n',
         'data: {"type":"session_closed","session_id":"sess-1"}\n\n',
     ]

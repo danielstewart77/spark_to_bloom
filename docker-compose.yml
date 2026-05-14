@@ -7,8 +7,13 @@ services:
       - ENVIRONMENT=production
       - GRAPH_API_URL=http://server:8420
       - GATEWAY_API_URL=http://server:8420
+      - HIVE_TOOLS_URL=http://hive-tools:9421
+      - HIVE_TOOLS_TOKEN=${HIVE_TOOLS_TOKEN:-}
       - STB_SECRET_KEY=${STB_SECRET_KEY:-change-this-in-production}
       - STB_DB_PATH=/data/stb.db
+      - STB_FORM_API_KEY=${STB_FORM_API_KEY:-}
+      - STB_FORM_ALLOWED_ORIGINS=${STB_FORM_ALLOWED_ORIGINS:-}
+      - STB_FORM_SUBMISSIONS_PATH=/data/form_submissions.jsonl
     ports:
       - "5000:5000"
     volumes:

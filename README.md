@@ -107,6 +107,27 @@ Important environment variables:
 - `STB_DB_PATH`
   Path to the SQLite auth database
 
+- `STB_FORM_API_KEY`
+  API key required by the KJ Dream Homes JSON form intake endpoint
+
+- `STB_FORM_ALLOWED_ORIGINS`
+  Optional comma-separated browser origins allowed to post to the form intake endpoint
+
+- `STB_FORM_SUBMISSIONS_PATH`
+  Path where accepted form submissions are appended as JSON Lines
+
+- `STB_FORM_NOTIFY_EMAIL`
+  Recipient email for non-spam KJ Dream Homes intake submissions
+
+- `STB_FORM_SPAM_MODEL`
+  Ollama model used for structured spam classification
+
+- `HIVE_TOOLS_URL`
+  Base URL for HiveTools integrations used for Ollama and Gmail delivery
+
+- `HIVE_TOOLS_TOKEN`
+  Bearer token used to authenticate STB calls into HiveTools
+
 The app defaults to:
 
 - gateway URL: `http://server:8420`
@@ -159,6 +180,7 @@ Run the main Spark test suites:
 cd /home/hivemind/dev/spark_to_bloom
 venv/bin/python -m pytest -q tests/test_auth.py
 venv/bin/python -m pytest -q tests/test_console_routes.py
+venv/bin/python -m pytest -q tests/test_form_routes.py
 venv/bin/python -m pytest -q tests/test_graph_routes.py
 venv/bin/python -m pytest -q tests/test_graph_data.py
 ```
