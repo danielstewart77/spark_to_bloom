@@ -21,10 +21,11 @@
     width: 320px;
     max-width: 90%;
     height: 100%;
+    box-sizing: border-box;
     background: rgba(10, 14, 25, 0.90);
     border-left: 1px solid rgba(56, 189, 248, 0.2);
     color: #dce8f0;
-    padding: 1.5rem;
+    padding: 1.5rem 1.5rem 4rem 1.5rem;
     overflow-y: auto;
     transform: translateX(100%);
     transition: transform 0.3s ease;
@@ -105,6 +106,50 @@
     border-radius: 50%;
     display: inline-block;
   }
+  .section-heading {
+    margin-top: 1rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    border-top: 1px solid #1e293b;
+    padding-top: 0.6rem;
+  }
+  ul.edges {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.85rem;
+  }
+  ul.edges li {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #0f172a;
+    cursor: pointer;
+  }
+  ul.edges li:hover {
+    background: #0f172a;
+  }
+  .edge-type {
+    color: #94a3b8;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    background: #1e293b;
+    border-radius: 3px;
+  }
+  .edge-arrow {
+    color: #475569;
+    margin: 0 0.3rem;
+  }
+  .edge-other {
+    color: #dce8f0;
+  }
+  .edge-other-type {
+    color: #64748b;
+    font-size: 0.7rem;
+    margin-left: 0.3rem;
+  }
 </style>
 
 <div id="graph-container">
@@ -115,6 +160,8 @@
     <h3 id="sidebar-name"></h3>
     <span id="sidebar-type" class="node-type"></span>
     <div class="props" id="sidebar-props"></div>
+    <h4 class="section-heading" id="sidebar-edges-heading">Connections</h4>
+    <ul class="edges" id="sidebar-edges"></ul>
   </div>
   <div class="legend">
     <span class="legend-item"><span class="legend-dot" style="background:#c9a84c"></span> Agent</span>
@@ -138,7 +185,7 @@
 
   var statusEl = document.getElementById('graph-status');
 
-  fetch('/graph/public-data', { credentials: 'same-origin' })
+  fetch('/graph/data', { credentials: 'same-origin' })
     .then(function(resp) {
       if (!resp.ok) {
         throw new Error('graph request failed: ' + resp.status);
@@ -156,23 +203,39 @@
 
       var elements = [];
 
+      // /graph/data returns properties flattened into each node alongside
+      // id/label/type. Collect every other key as the "properties" object the
+      // click-handler renders.
+      var SKIP_KEYS = { id: 1, label: 1, type: 1 };
       data.nodes.forEach(function(n) {
+        var props = {};
+        for (var k in n) {
+          if (Object.prototype.hasOwnProperty.call(n, k) && !SKIP_KEYS[k]) {
+            props[k] = n[k];
+          }
+        }
         elements.push({
           data: {
             id: n.id,
             label: n.label,
             type: n.type,
-            properties: n.properties || {}
+            properties: props
           }
         });
       });
 
-      data.edges.forEach(function(e) {
+      // The API returns edges as {source, target, type}. Cytoscape needs
+      // unique edge ids — without one, multi-edges between the same pair
+      // (e.g., Xiaolan MARRIED_TO Daniel + Xiaolan RELATED_TO Daniel) collide
+      // and only one survives. Build a deterministic id from the triple.
+      data.edges.forEach(function(e, i) {
+        var label = e.type || e.label || '';
         elements.push({
           data: {
-            source: e.source,
-            target: e.target,
-            label: e.label
+            id: 'e_' + e.source + '_' + e.target + '_' + label + '_' + i,
+            source: String(e.source),
+            target: String(e.target),
+            label: label
           }
         });
       });
@@ -240,7 +303,7 @@
         }
       });
 
-      // Click handler: show sidebar with node details
+      // Click handler: show sidebar with node details + edges
       cy.on('tap', 'node', function(evt) {
         var node = evt.target;
         var d = node.data();
@@ -257,6 +320,65 @@
           propsText = '(no additional properties)';
         }
         document.getElementById('sidebar-props').textContent = propsText;
+
+        // Collect edges. For each, render: [TYPE] -> Other  OR  Other <- [TYPE]
+        var edges = node.connectedEdges();
+        var edgeList = document.getElementById('sidebar-edges');
+        var heading = document.getElementById('sidebar-edges-heading');
+        edgeList.innerHTML = '';
+        if (edges.length === 0) {
+          heading.style.display = 'none';
+          edgeList.style.display = 'none';
+        } else {
+          heading.style.display = 'block';
+          heading.textContent = 'Connections (' + edges.length + ')';
+          edgeList.style.display = 'block';
+          // Sort: outgoing first (by type), then incoming (by type)
+          var rows = [];
+          edges.forEach(function(e) {
+            var ed = e.data();
+            var isOut = ed.source === d.id;
+            var otherNode = isOut ? e.target() : e.source();
+            var od = otherNode.data();
+            rows.push({
+              dir: isOut ? 'out' : 'in',
+              type: ed.label,
+              otherId: od.id,
+              otherLabel: od.label,
+              otherType: od.type
+            });
+          });
+          rows.sort(function(a, b) {
+            if (a.dir !== b.dir) return a.dir === 'out' ? -1 : 1;
+            return a.type.localeCompare(b.type);
+          });
+          rows.forEach(function(r) {
+            var li = document.createElement('li');
+            li.dataset.nodeId = r.otherId;
+            if (r.dir === 'out') {
+              li.innerHTML =
+                '<span class="edge-type">' + r.type + '</span>' +
+                '<span class="edge-arrow">&rarr;</span>' +
+                '<span class="edge-other">' + r.otherLabel + '</span>' +
+                '<span class="edge-other-type">' + r.otherType + '</span>';
+            } else {
+              li.innerHTML =
+                '<span class="edge-other">' + r.otherLabel + '</span>' +
+                '<span class="edge-other-type">' + r.otherType + '</span>' +
+                '<span class="edge-arrow">&rarr;</span>' +
+                '<span class="edge-type">' + r.type + '</span>';
+            }
+            li.addEventListener('click', function() {
+              var target = cy.getElementById(String(r.otherId));
+              if (target && target.length) {
+                target.trigger('tap');
+                cy.animate({ center: { eles: target }, zoom: cy.zoom() }, { duration: 250 });
+              }
+            });
+            edgeList.appendChild(li);
+          });
+        }
+
         document.getElementById('sidebar').classList.add('open');
       });
 

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import markdown
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -9,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -42,11 +43,84 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
+HIVE_INIT_ALLOWED_FILES = {
+    "hive-init.py": "text/x-python",
+    "hive-init.sh": "text/x-shellscript",
+}
+
 
 def _gateway_base_url() -> str:
-    import os
-
     return os.getenv("GATEWAY_API_URL") or os.getenv("GRAPH_API_URL") or "http://server:8420"
+
+
+def _request_host(request: Request) -> str:
+    return request.headers.get("host", "").split(":", 1)[0].lower()
+
+
+def _hive_init_host() -> str:
+    return os.getenv("HIVE_INIT_HOST", "gethivemind.sparktobloom.com").lower()
+
+
+def _hive_init_repo_dir() -> Path:
+    return Path(os.getenv("HIVE_INIT_REPO_DIR", "/mnt/dev/hive-init")).resolve()
+
+
+def _hive_init_asset_path(filename: str) -> Path:
+    if filename not in HIVE_INIT_ALLOWED_FILES:
+        raise HTTPException(status_code=404, detail="Installer asset not found")
+
+    repo_dir = _hive_init_repo_dir()
+    asset_path = (repo_dir / filename).resolve()
+    if asset_path.parent != repo_dir or not asset_path.is_file():
+        raise HTTPException(status_code=404, detail="Installer asset not found")
+    return asset_path
+
+
+def _serve_hive_init_asset(filename: str) -> FileResponse:
+    asset_path = _hive_init_asset_path(filename)
+    return FileResponse(
+        asset_path,
+        media_type=HIVE_INIT_ALLOWED_FILES[filename],
+        filename=filename,
+    )
+
+
+def _render_hive_init_home(request: Request) -> HTMLResponse:
+    base_url = f"{request.url.scheme}://{request.headers.get('host', _hive_init_host())}"
+    body = f"""
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>Get Hive Mind</title>
+        <style>
+          body {{
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            max-width: 48rem;
+            margin: 4rem auto;
+            padding: 0 1.25rem;
+            line-height: 1.6;
+          }}
+          code {{
+            background: #f3f3f3;
+            padding: 0.1rem 0.3rem;
+          }}
+        </style>
+      </head>
+      <body>
+        <h1>Get Hive Mind</h1>
+        <p>Standalone Phase 1 installer for Hive Mind.</p>
+        <p>Download targets:</p>
+        <ul>
+          <li><a href="{base_url}/hive-init.py">hive-init.py</a></li>
+          <li><a href="{base_url}/hive-init.sh">hive-init.sh</a></li>
+        </ul>
+        <p>Quick start:</p>
+        <pre><code>curl -fsSL {base_url}/hive-init.sh | bash</code></pre>
+      </body>
+    </html>
+    """
+    return HTMLResponse(body)
 
 
 def _render_template(request: Request, template_name: str, **context) -> HTMLResponse:
@@ -142,6 +216,22 @@ def _proxy_session_events(session_id: str):
         yield f"data: {json.dumps(payload)}\n\n"
 
 
+@app.middleware("http")
+async def hive_init_host_router(request: Request, call_next):
+    if _request_host(request) != _hive_init_host():
+        return await call_next(request)
+
+    if request.url.path in {"", "/"}:
+        return _render_hive_init_home(request)
+    if request.url.path == "/health":
+        return PlainTextResponse("ok")
+    if request.url.path.startswith("/"):
+        filename = request.url.path[1:]
+        if filename in HIVE_INIT_ALLOWED_FILES:
+            return _serve_hive_init_asset(filename)
+    return PlainTextResponse("Not Found", status_code=404)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return _render_template(request, "home.html")
@@ -155,6 +245,11 @@ async def about(request: Request):
 @app.get("/pullrequests", response_class=HTMLResponse)
 async def pullrequests(request: Request):
     return _render_template(request, "pullrequests.html")
+
+
+@app.get("/downloads/{filename}")
+async def download_hive_init_asset(filename: str):
+    return _serve_hive_init_asset(filename)
 
 
 @app.get("/linkedin", response_class=HTMLResponse)

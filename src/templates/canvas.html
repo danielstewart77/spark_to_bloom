@@ -1,6 +1,110 @@
 {% extends "layout.html" %}
 {% block content %}
 <style>
+  .canvas-layout {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  /* ── Sidebar ── */
+  .canvas-sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid #c9a84c22;
+    background: #090912;
+    transition: width 0.2s ease, min-width 0.2s ease;
+    position: relative;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .canvas-sidebar.collapsed {
+    width: 30px;
+    min-width: 30px;
+  }
+
+  .sidebar-toggle {
+    position: absolute;
+    top: 1.1rem;
+    right: -12px;
+    width: 20px;
+    height: 28px;
+    background: #0f0f1f;
+    border: 1px solid #c9a84c33;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #c9a84c77;
+    z-index: 10;
+    padding: 0;
+    line-height: 1;
+  }
+  .sidebar-toggle:hover {
+    color: #c9a84c;
+    background: #141428;
+  }
+
+  .sidebar-inner {
+    padding: 1rem 0.75rem 1rem 0.75rem;
+    overflow: hidden;
+  }
+  .canvas-sidebar.collapsed .sidebar-inner {
+    display: none;
+  }
+
+  .sidebar-title {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #c9a84caa;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #c9a84c33;
+    margin-bottom: 0.5rem;
+  }
+
+  .sidebar-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .sidebar-list li {
+    margin: 0;
+  }
+  .sidebar-list a {
+    display: block;
+    padding: 0.28rem 0.4rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.71rem;
+    color: #c9a84c;
+    text-decoration: none;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 0.12s, background 0.12s;
+    border-left: 2px solid transparent;
+  }
+  .sidebar-list a:hover {
+    color: #f1d78a;
+    background: #c9a84c0d;
+  }
+  .sidebar-list a.active {
+    color: #f6e3aa;
+    background: #c9a84c1f;
+    border-left: 2px solid #f1d78a;
+  }
+
+  /* ── Main area ── */
+  .canvas-main {
+    flex: 1;
+    min-width: 0;
+    padding: 0 1.5rem;
+  }
+
+  /* ── Banner ── */
   .canvas-banner {
     display: block;
     width: 100%;
@@ -17,6 +121,8 @@
     height: auto;
     max-height: 160px;
   }
+
+  /* ── Content ── */
   .canvas-content {
     font-family: 'Fira Code', 'Consolas', monospace;
   }
@@ -25,146 +131,162 @@
   }
 </style>
 
-<main>
-  <article class="article-container canvas-content">
-    {{ content|safe }}
-  </article>
-</main>
+<div class="canvas-layout">
 
-<div class="canvas-banner">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">
-    <defs>
-      <linearGradient id="cbg" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%"   stop-color="#090912"/>
-        <stop offset="60%"  stop-color="#0f0f1f"/>
-        <stop offset="100%" stop-color="#141428"/>
-      </linearGradient>
-      <filter id="chex-glow">
-        <feGaussianBlur stdDeviation="4" result="blur"/>
-        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <filter id="ctext-glow">
-        <feGaussianBlur stdDeviation="6" result="blur"/>
-        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <filter id="ccursor-glow">
-        <feGaussianBlur stdDeviation="10" result="blur"/>
-        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <!-- Hex cluster emerges from center toward right -->
-      <linearGradient id="cfade-left" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%"   stop-color="white" stop-opacity="0"/>
-        <stop offset="35%"  stop-color="white" stop-opacity="0.5"/>
-        <stop offset="50%"  stop-color="white" stop-opacity="1"/>
-        <stop offset="100%" stop-color="white" stop-opacity="1"/>
-      </linearGradient>
-      <mask id="chex-mask">
-        <rect width="680" height="240" fill="url(#cfade-left)"/>
-      </mask>
-      <radialGradient id="cvignette" cx="65%" cy="50%" r="65%">
-        <stop offset="0%"   stop-color="#c9a84c" stop-opacity="0.04"/>
-        <stop offset="100%" stop-color="#000000" stop-opacity="0.5"/>
-      </radialGradient>
-    </defs>
+  <aside class="canvas-sidebar" id="canvas-sidebar">
+    <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle backlog">&#x25C4;</button>
+    <div class="sidebar-inner">
+      <div class="sidebar-title">backlog</div>
+      <ul class="sidebar-list">
+        {% for item in backlog_items %}
+        <li>
+          <a href="/canvas?doc={{ item.slug }}"
+             class="{% if item.slug == active_doc %}active{% endif %}"
+             title="{{ item.label }}">{{ item.label }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </aside>
 
-    <!-- Background -->
-    <rect width="680" height="240" fill="url(#cbg)"/>
+  <div class="canvas-main">
+    <main>
+      <article class="article-container canvas-content">
+        {{ content|safe }}
+      </article>
+    </main>
 
-    <!-- Hex network — right cluster, fading left -->
-    <g mask="url(#chex-mask)">
-      <!-- Hex 1: center (520, 82) r=50 — main anchor node -->
-      <polygon points="520,32 563,57 563,107 520,132 477,107 477,57"
-        fill="#c9a84c" fill-opacity="0.05"
-        stroke="#c9a84c" stroke-width="1.5" stroke-opacity="0.5"
-        filter="url(#chex-glow)"/>
+    <div class="canvas-banner">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">
+        <defs>
+          <linearGradient id="cbg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#090912"/>
+            <stop offset="60%"  stop-color="#0f0f1f"/>
+            <stop offset="100%" stop-color="#141428"/>
+          </linearGradient>
+          <filter id="chex-glow">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="ctext-glow">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="ccursor-glow">
+            <feGaussianBlur stdDeviation="10" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <linearGradient id="cfade-left" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="white" stop-opacity="0"/>
+            <stop offset="35%"  stop-color="white" stop-opacity="0.5"/>
+            <stop offset="50%"  stop-color="white" stop-opacity="1"/>
+            <stop offset="100%" stop-color="white" stop-opacity="1"/>
+          </linearGradient>
+          <mask id="chex-mask">
+            <rect width="680" height="240" fill="url(#cfade-left)"/>
+          </mask>
+          <radialGradient id="cvignette" cx="65%" cy="50%" r="65%">
+            <stop offset="0%"   stop-color="#c9a84c" stop-opacity="0.04"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0.5"/>
+          </radialGradient>
+        </defs>
 
-      <!-- Hex 2: center (428, 150) r=40 — cursor node -->
-      <polygon points="428,110 463,130 463,170 428,190 393,170 393,130"
-        fill="#c9a84c" fill-opacity="0.06"
-        stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.4"
-        filter="url(#chex-glow)"/>
+        <rect width="680" height="240" fill="url(#cbg)"/>
 
-      <!-- Hex 3: center (590, 158) r=30 -->
-      <polygon points="590,128 616,143 616,173 590,188 564,173 564,143"
-        fill="#c9a84c" fill-opacity="0.04"
-        stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.45"
-        filter="url(#chex-glow)"/>
+        <g mask="url(#chex-mask)">
+          <polygon points="520,32 563,57 563,107 520,132 477,107 477,57"
+            fill="#c9a84c" fill-opacity="0.05"
+            stroke="#c9a84c" stroke-width="1.5" stroke-opacity="0.5"
+            filter="url(#chex-glow)"/>
+          <polygon points="428,110 463,130 463,170 428,190 393,170 393,130"
+            fill="#c9a84c" fill-opacity="0.06"
+            stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.4"
+            filter="url(#chex-glow)"/>
+          <polygon points="590,128 616,143 616,173 590,188 564,173 564,143"
+            fill="#c9a84c" fill-opacity="0.04"
+            stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.45"
+            filter="url(#chex-glow)"/>
+          <polygon points="608,40 627,51 627,73 608,84 589,73 589,51"
+            fill="none"
+            stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.3"/>
+          <polygon points="480,162 504,176 504,204 480,218 456,204 456,176"
+            fill="none"
+            stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.2"
+            stroke-dasharray="4 5"/>
+          <polygon points="350,73 380,91 380,125 350,143 320,125 320,91"
+            fill="none"
+            stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25"
+            stroke-dasharray="3 6"/>
 
-      <!-- Hex 4: center (608, 62) r=22 — small satellite -->
-      <polygon points="608,40 627,51 627,73 608,84 589,73 589,51"
-        fill="none"
-        stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.3"/>
+          <line x1="520" y1="82"  x2="428" y2="150" stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.30" stroke-dasharray="4 6"/>
+          <line x1="520" y1="82"  x2="590" y2="158" stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25" stroke-dasharray="3 7"/>
+          <line x1="590" y1="158" x2="608" y2="62"  stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20"/>
+          <line x1="428" y1="150" x2="480" y2="190" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="2 5"/>
+          <line x1="350" y1="108" x2="428" y2="150" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="3 6"/>
 
-      <!-- Hex 5: center (480, 190) r=28 — dashed, in progress -->
-      <polygon points="480,162 504,176 504,204 480,218 456,204 456,176"
-        fill="none"
-        stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.2"
-        stroke-dasharray="4 5"/>
+          <circle cx="520" cy="82"  r="3"   fill="#c9a84c" fill-opacity="0.7"  filter="url(#chex-glow)"/>
+          <circle cx="590" cy="158" r="2.5" fill="#c9a84c" fill-opacity="0.6"/>
+          <circle cx="608" cy="62"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
+          <circle cx="520" cy="32"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
+          <circle cx="563" cy="57"  r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
+          <circle cx="563" cy="107" r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
+          <circle cx="428" cy="150" r="5" fill="#c9a84c" fill-opacity="0.92" filter="url(#ccursor-glow)"/>
+          <line x1="418" y1="160" x2="428" y2="150" stroke="#c9a84c" stroke-width="2.5" stroke-opacity="0.5" stroke-linecap="round"/>
+        </g>
 
-      <!-- Hex 6: center (350, 108) r=35 — dashed, emerging from fade -->
-      <polygon points="350,73 380,91 380,125 350,143 320,125 320,91"
-        fill="none"
-        stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25"
-        stroke-dasharray="3 6"/>
+        <rect width="680" height="240" fill="url(#cvignette)"/>
 
-      <!-- Connection spine: hex1 → hex2 -->
-      <line x1="520" y1="82"  x2="428" y2="150" stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.30" stroke-dasharray="4 6"/>
-      <!-- hex1 → hex3 -->
-      <line x1="520" y1="82"  x2="590" y2="158" stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25" stroke-dasharray="3 7"/>
-      <!-- hex3 → hex4 -->
-      <line x1="590" y1="158" x2="608" y2="62"  stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20"/>
-      <!-- hex2 → hex5 (in progress) -->
-      <line x1="428" y1="150" x2="480" y2="190" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="2 5"/>
-      <!-- hex6 → hex2 (emerging) -->
-      <line x1="350" y1="108" x2="428" y2="150" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="3 6"/>
+        <text x="40" y="108"
+          text-anchor="start"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-size="42"
+          letter-spacing="10"
+          fill="#c9a84c"
+          fill-opacity="0.90"
+          filter="url(#ctext-glow)">CANVAS</text>
 
-      <!-- Node anchor dots -->
-      <circle cx="520" cy="82"  r="3"   fill="#c9a84c" fill-opacity="0.7"  filter="url(#chex-glow)"/>
-      <circle cx="590" cy="158" r="2.5" fill="#c9a84c" fill-opacity="0.6"/>
-      <circle cx="608" cy="62"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
-      <circle cx="520" cy="32"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
-      <circle cx="563" cy="57"  r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
-      <circle cx="563" cy="107" r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
+        <text x="40" y="136"
+          text-anchor="start"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-size="13"
+          letter-spacing="4"
+          fill="#c9a84c"
+          fill-opacity="0.45">ADA'S WORKSPACE</text>
 
-      <!-- Cursor dot at hex 2 — Ada actively writing here -->
-      <circle cx="428" cy="150" r="5" fill="#c9a84c" fill-opacity="0.92" filter="url(#ccursor-glow)"/>
-      <!-- Pen nib trailing stroke -->
-      <line x1="418" y1="160" x2="428" y2="150" stroke="#c9a84c" stroke-width="2.5" stroke-opacity="0.5" stroke-linecap="round"/>
-    </g>
+        <line x1="30" y1="145" x2="290" y2="145" stroke="#c9a84c" stroke-width="0.5" stroke-opacity="0.3"/>
+      </svg>
+    </div>
+  </div>
 
-    <!-- Vignette -->
-    <rect width="680" height="240" fill="url(#cvignette)"/>
-
-    <!-- Text — left-aligned -->
-    <text
-      x="40" y="108"
-      text-anchor="start"
-      font-family="Georgia, 'Times New Roman', serif"
-      font-size="42"
-      letter-spacing="10"
-      fill="#c9a84c"
-      fill-opacity="0.90"
-      filter="url(#ctext-glow)"
-    >CANVAS</text>
-
-    <text
-      x="40" y="136"
-      text-anchor="start"
-      font-family="Georgia, 'Times New Roman', serif"
-      font-size="13"
-      letter-spacing="4"
-      fill="#c9a84c"
-      fill-opacity="0.45"
-    >ADA'S WORKSPACE</text>
-
-    <!-- Rule under subtitle -->
-    <line x1="30" y1="145" x2="290" y2="145" stroke="#c9a84c" stroke-width="0.5" stroke-opacity="0.3"/>
-  </svg>
 </div>
-
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
+  (function () {
+    var sidebar = document.getElementById('canvas-sidebar');
+    var btn = document.getElementById('sidebar-toggle');
+    var KEY = 'canvas-sidebar-collapsed';
+
+    function setCollapsed(c) {
+      if (c) {
+        sidebar.classList.add('collapsed');
+        btn.innerHTML = '&#x25BA;';
+      } else {
+        sidebar.classList.remove('collapsed');
+        btn.innerHTML = '&#x25C4;';
+      }
+      try { sessionStorage.setItem(KEY, c ? '1' : '0'); } catch(e) {}
+    }
+
+    try {
+      if (sessionStorage.getItem(KEY) === '1') setCollapsed(true);
+    } catch(e) {}
+
+    btn.addEventListener('click', function () {
+      setCollapsed(!sidebar.classList.contains('collapsed'));
+    });
+  })();
+
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('code.language-mermaid').forEach(function (el) {
       var pre = el.parentElement;

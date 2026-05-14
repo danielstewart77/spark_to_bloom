@@ -7,6 +7,8 @@ services:
       - ENVIRONMENT=production
       - GRAPH_API_URL=http://server:8420
       - GATEWAY_API_URL=http://server:8420
+      - HIVE_INIT_HOST=${HIVE_INIT_HOST:-gethivemind.sparktobloom.com}
+      - HIVE_INIT_REPO_DIR=/srv/hive-init
       - STB_SECRET_KEY=${STB_SECRET_KEY:-change-this-in-production}
       - STB_DB_PATH=/data/stb.db
     ports:
@@ -15,6 +17,7 @@ services:
       - ./src:/app
       - ./data:/data
       - ./scripts:/scripts
+      - ${HIVE_INIT_HOST_PATH:-/home/daniel/Storage/Dev/hive-init}:/srv/hive-init:ro
     networks:
       - hivemind
 
