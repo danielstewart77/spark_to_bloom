@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spark to Bloom</title>
+    <link rel="icon" type="image/jpeg" href="{{ request.url_for('static', path='images/spark_to_bloom_logo.jpg') }}">
+    <link rel="shortcut icon" type="image/jpeg" href="{{ request.url_for('static', path='images/spark_to_bloom_logo.jpg') }}">
     <link rel="stylesheet" href="{{ request.url_for('static', path='style.css') }}?v={{ asset_versions['style.css'] }}">
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet">
@@ -19,7 +21,6 @@
                 <li><a href="/">home</a></li>
                 <li><a href="/pages/about.md">about</a></li>
                 <li><a href="/pullrequests">pull-&gt;requests</a></li>
-                <li><a href="/pages/backlog.md">backlog</a></li>
                 <li><a href="/canvas">canvas</a></li>
                 <li><a href="/linkedin">linkedin</a></li>
                 {% if current_user %}

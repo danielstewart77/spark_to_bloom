@@ -101,6 +101,15 @@ Important environment variables:
 - `GRAPH_API_URL`
   Fallback base URL for graph data if `GATEWAY_API_URL` is not set
 
+- `HIVE_INIT_HOST`
+  Optional host name dedicated to serving the standalone Phase 1 installer
+
+- `HIVE_INIT_REPO_DIR`
+  Filesystem path containing the canonical `hive-init.py` and `hive-init.sh` assets
+
+- `HIVE_INIT_HOST_PATH`
+  Host-side path mounted into the Spark to Bloom container for standalone installer delivery
+
 - `STB_SECRET_KEY`
   Secret used for session signing
 
@@ -111,6 +120,28 @@ The app defaults to:
 
 - gateway URL: `http://server:8420`
 - auth DB: `data/stb.db`
+- hive-init host: `gethivemind.sparktobloom.com`
+- hive-init repo dir: `/mnt/dev/hive-init`
+- hive-init host path: `/home/daniel/Storage/Dev/hive-init`
+
+## Hive Init delivery
+
+Spark to Bloom can deliver the standalone `hive-init` installer from a separate
+repo without absorbing the installer logic into this codebase.
+
+Two delivery patterns are supported:
+
+- Main site downloads:
+  - `/downloads/hive-init.py`
+  - `/downloads/hive-init.sh`
+
+- Dedicated host:
+  - `https://gethivemind.sparktobloom.com/`
+  - `https://gethivemind.sparktobloom.com/hive-init.py`
+  - `https://gethivemind.sparktobloom.com/hive-init.sh`
+
+The container must have the canonical installer repo mounted read-only and
+`HIVE_INIT_REPO_DIR` pointed at that mount.
 
 ## Local development
 
