@@ -13,9 +13,10 @@
     border-right: 1px solid #c9a84c22;
     background: #090912;
     transition: width 0.2s ease, min-width 0.2s ease;
-    position: relative;
+    position: sticky;
+    top: var(--nav-h);
     flex-shrink: 0;
-    align-self: stretch;
+    align-self: flex-start;
   }
   .canvas-sidebar.collapsed {
     width: 30px;
@@ -48,7 +49,10 @@
 
   .sidebar-inner {
     padding: 1rem 0.75rem 1rem 0.75rem;
-    overflow: hidden;
+    max-height: calc(100vh - var(--nav-h));
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
   }
   .canvas-sidebar.collapsed .sidebar-inner {
     display: none;

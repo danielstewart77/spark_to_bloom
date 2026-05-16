@@ -23,6 +23,10 @@
    accent glow:  #38bdf8 / #0ea5e9
    ============================================================ */
 
+:root {
+    --nav-h: 56px;
+}
+
 /* Enhanced Global Styles */
 body, html {
     height: 90%;
@@ -34,6 +38,7 @@ body, html {
     color: #e7e7de;
     line-height: 1.6;
     margin-bottom: 15px;
+    padding-top: var(--nav-h);
 }
 
 /* Enhanced Glow Effect */
@@ -155,9 +160,13 @@ button:hover {
 nav {
     background-color: #162030;
     padding: 0.5rem 2rem;
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 100;
+    min-height: var(--nav-h);
+    box-sizing: border-box;
 }
 
 nav ul {
