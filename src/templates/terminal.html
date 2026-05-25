@@ -3,13 +3,29 @@
 <main class="terminal-page">
     <div class="term-shell">
         <div class="term-topbar">
-            <select id="mind-select" class="term-mind-select">
-                {% for mind in minds %}
-                <option value="{{ mind.id }}" data-name="{{ mind.name }}">{{ mind.name }}</option>
+            <select id="mind-select" class="term-mind-select" aria-label="active sessions">
+                {% for mind in selector_minds %}
+                <optgroup label="{{ mind.name }} · {{ mind.id[:8] }}">
+                    <option value="new:{{ mind.id }}"
+                            data-action="new"
+                            data-mind-id="{{ mind.id }}"
+                            data-mind-name="{{ mind.name }}">— new session for {{ mind.name }} —</option>
+                    {% for session in mind.sessions %}
+                    <option value="session:{{ session.id }}"
+                            data-action="load"
+                            data-session-id="{{ session.id }}"
+                            data-mind-id="{{ mind.id }}"
+                            data-mind-name="{{ mind.name }}"
+                            data-status="{{ session.status }}"
+                            data-last-active="{{ session.last_active }}"
+                            data-summary="{{ session.summary }}">{{ mind.name }} · {{ session.short_id }} · {{ session.status }} · {{ session.age }}{% if session.summary %} · {{ session.summary[:48] }}{% endif %}</option>
+                    {% endfor %}
+                </optgroup>
                 {% endfor %}
             </select>
             <span id="term-session-info" class="term-session-info">no session</span>
             <button id="term-new-session" class="term-action-btn" type="button">new session</button>
+            <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
         </div>
         <div id="term-feed" class="term-feed" aria-live="polite"></div>
         <form id="term-input-form" class="term-input-bar" autocomplete="off">
@@ -28,6 +44,7 @@
     const mindSelect = document.getElementById("mind-select");
     const sessionInfo = document.getElementById("term-session-info");
     const newSessionBtn = document.getElementById("term-new-session");
+    const refreshBtn = document.getElementById("term-refresh");
 
     let currentSessionId = null;
     let eventSource = null;
@@ -73,7 +90,7 @@
             const chunk = extractText(event);
             if (!chunk) return;
             if (!currentAssistantEl) {
-                const mindName = mindSelect.selectedOptions[0] && mindSelect.selectedOptions[0].dataset.name;
+                const mindName = mindSelect.selectedOptions[0] && mindSelect.selectedOptions[0].dataset.mindName;
                 startAssistantLine(mindName);
             }
             appendAssistantChunk(chunk);
@@ -117,14 +134,28 @@
         input.focus();
     }
 
-    async function loadSession(mindId) {
-        const resp = await fetch("/api/terminal/session?mind_id=" + mindId, {credentials: "same-origin"});
-        if (!resp.ok) { appendLine("term-system", "error loading session"); return; }
-        const session = await resp.json();
-        setSession(session);
+    function selectedOption() {
+        return mindSelect.selectedOptions[0] || null;
+    }
+
+    function selectedMindId() {
+        const opt = selectedOption();
+        return (opt && opt.dataset.mindId) || "";
+    }
+
+    function attachSessionFromOption(opt) {
+        const sessionObj = {
+            id: opt.dataset.sessionId,
+            mind_id: opt.dataset.mindId,
+            status: opt.dataset.status || "running",
+            summary: opt.dataset.summary || "",
+            last_active: opt.dataset.lastActive || "",
+        };
+        setSession(sessionObj);
     }
 
     async function createSession(mindId) {
+        if (!mindId) { appendLine("term-system", "no mind selected"); return; }
         const resp = await fetch("/api/terminal/session", {
             method: "POST",
             credentials: "same-origin",
@@ -136,15 +167,73 @@
         feed.innerHTML = "";
         currentAssistantEl = null;
         setSession(session);
+        await refreshSelector(session.id);
+    }
+
+    async function refreshSelector(preserveSessionId) {
+        try {
+            const resp = await fetch("/api/terminal/selector", {credentials: "same-origin"});
+            if (!resp.ok) return;
+            const data = await resp.json();
+            rebuildSelector(data, preserveSessionId || currentSessionId);
+        } catch(err) { /* swallow */ }
+    }
+
+    function rebuildSelector(minds, preserveSessionId) {
+        const previousValue = mindSelect.value;
+        mindSelect.innerHTML = "";
+        minds.forEach(function(mind) {
+            const group = document.createElement("optgroup");
+            group.label = mind.name + " · " + (mind.id || "").slice(0, 8);
+            const newOpt = document.createElement("option");
+            newOpt.value = "new:" + mind.id;
+            newOpt.dataset.action = "new";
+            newOpt.dataset.mindId = mind.id;
+            newOpt.dataset.mindName = mind.name;
+            newOpt.textContent = "— new session for " + mind.name + " —";
+            group.appendChild(newOpt);
+            (mind.sessions || []).forEach(function(s) {
+                const opt = document.createElement("option");
+                opt.value = "session:" + s.id;
+                opt.dataset.action = "load";
+                opt.dataset.sessionId = s.id;
+                opt.dataset.mindId = mind.id;
+                opt.dataset.mindName = mind.name;
+                opt.dataset.status = s.status || "";
+                opt.dataset.lastActive = s.last_active || "";
+                opt.dataset.summary = s.summary || "";
+                const summaryPart = s.summary ? " · " + s.summary.slice(0, 48) : "";
+                opt.textContent = mind.name + " · " + s.short_id + " · " + s.status + " · " + s.age + summaryPart;
+                group.appendChild(opt);
+            });
+            mindSelect.appendChild(group);
+        });
+        const targetValue = preserveSessionId
+            ? "session:" + preserveSessionId
+            : previousValue;
+        const found = Array.from(mindSelect.options).find(o => o.value === targetValue);
+        if (found) {
+            mindSelect.value = targetValue;
+        }
     }
 
     mindSelect.addEventListener("change", function() {
-        loadSession(mindSelect.value);
+        const opt = selectedOption();
+        if (!opt) return;
+        if (opt.dataset.action === "new") {
+            createSession(opt.dataset.mindId);
+        } else if (opt.dataset.action === "load" && opt.dataset.sessionId) {
+            attachSessionFromOption(opt);
+        }
     });
 
     newSessionBtn.addEventListener("click", function() {
-        createSession(mindSelect.value);
+        createSession(selectedMindId());
     });
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", function() { refreshSelector(); });
+    }
 
     form.addEventListener("submit", async function(e) {
         e.preventDefault();
@@ -165,9 +254,14 @@
         }
     });
 
-    // Boot: load session for default (first) mind
-    if (mindSelect.value) {
-        loadSession(mindSelect.value);
+    // Boot: load the first selectable option (defaults to first load entry if present, else first new entry)
+    const loadOptions = Array.from(mindSelect.options).filter(o => o.dataset.action === "load");
+    if (loadOptions.length > 0) {
+        mindSelect.value = loadOptions[0].value;
+        attachSessionFromOption(loadOptions[0]);
+    } else if (mindSelect.options.length > 0) {
+        // No active sessions — leave selection on first option (a "new" entry), but don't auto-create.
+        sessionInfo.textContent = "no active sessions — pick a mind and click new session";
     }
 })();
 </script>

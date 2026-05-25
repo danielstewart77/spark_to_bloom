@@ -401,7 +401,92 @@ async def terminal(request: Request):
         minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
     except Exception:
         minds = []
-    return _render_template(request, "terminal.html", minds=minds)
+    try:
+        all_sessions = await _gateway_json("/sessions")
+        if not isinstance(all_sessions, list):
+            all_sessions = []
+    except Exception:
+        all_sessions = []
+    selector_minds = _build_terminal_selector(minds, all_sessions)
+    return _render_template(
+        request,
+        "terminal.html",
+        minds=minds,
+        selector_minds=selector_minds,
+    )
+
+
+def _build_terminal_selector(minds: list[dict], sessions: list[dict]) -> list[dict]:
+    now = int(time.time())
+    cutoff = now - 86400
+    by_mind: dict[str, list[dict]] = {}
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        if session.get("status") not in ("running", "idle"):
+            continue
+        if int(session.get("last_active", 0)) < cutoff:
+            continue
+        mind_id = session.get("mind_id") or ""
+        if not mind_id:
+            continue
+        by_mind.setdefault(mind_id, []).append(session)
+    enriched: list[dict] = []
+    for mind in minds:
+        mind_id = mind.get("id") or ""
+        mind_name = mind.get("name") or "mind"
+        mind_sessions = by_mind.get(mind_id, [])
+        mind_sessions.sort(key=lambda s: -float(s.get("last_active", 0)))
+        enriched.append({
+            "id": mind_id,
+            "name": mind_name,
+            "sessions": [
+                {
+                    "id": s.get("id"),
+                    "short_id": (s.get("id") or "")[:8],
+                    "status": s.get("status"),
+                    "last_active": s.get("last_active"),
+                    "age": _relative_age(now, s.get("last_active")),
+                    "summary": (s.get("summary") or "").strip(),
+                }
+                for s in mind_sessions
+            ],
+        })
+    return enriched
+
+
+def _relative_age(now: int, last_active) -> str:
+    try:
+        seconds = max(0, int(now - float(last_active or 0)))
+    except (TypeError, ValueError):
+        return ""
+    if seconds < 60:
+        return f"{seconds}s ago"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
+
+
+@app.get("/api/terminal/selector")
+async def api_terminal_selector(user: dict = Depends(require_auth)):
+    del user
+    try:
+        minds = await _gateway_json("/broker/minds")
+        if not isinstance(minds, list):
+            minds = []
+        minds = [m for m in minds if isinstance(m, dict) and m.get("name") not in ("skippy",)]
+        minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
+    except Exception:
+        minds = []
+    try:
+        all_sessions = await _gateway_json("/sessions")
+        if not isinstance(all_sessions, list):
+            all_sessions = []
+    except Exception:
+        all_sessions = []
+    return _build_terminal_selector(minds, all_sessions)
 
 
 @app.get("/api/terminal/session")
