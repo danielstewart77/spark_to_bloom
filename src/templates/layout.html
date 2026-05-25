@@ -11,6 +11,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet">
     <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
     <script>hljs.highlightAll();</script>
+    <script>
+    (function () {
+        var nativeFetch = window.fetch.bind(window);
+        var redirecting = false;
+        window.fetch = function (input, init) {
+            return nativeFetch(input, init).then(function (resp) {
+                if (resp && resp.status === 401 && !redirecting) {
+                    var path = window.location.pathname + window.location.search;
+                    if (window.location.pathname !== "/login") {
+                        redirecting = true;
+                        window.location.assign("/login?next=" + encodeURIComponent(path));
+                    }
+                }
+                return resp;
+            });
+        };
+    })();
+    </script>
 </head>
 <body>
     <nav>
