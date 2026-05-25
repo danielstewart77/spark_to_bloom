@@ -99,6 +99,16 @@
     function handleEvent(event) {
         if (event.type === "assistant") {
             inFlight = true;
+            // If a pending user message is waiting without a pill yet, add it now
+            if (pendingUserEl && !pendingPill) {
+                const pill = document.createElement("button");
+                pill.type = "button";
+                pill.className = "term-interrupt-pill";
+                pill.textContent = "interrupt";
+                pill.addEventListener("click", function() { doInterrupt(pill); });
+                pendingUserEl.appendChild(pill);
+                pendingPill = pill;
+            }
             const chunk = extractText(event);
             if (!chunk) return;
             if (!currentAssistantEl) {
@@ -224,7 +234,7 @@
         try { return localStorage.getItem("term-session") || ""; } catch(e) { return ""; }
     }
 
-    function setSession(session) {
+    async function setSession(session) {
         cancelReattachLoop();
         sessionWasClosed = false;
         currentSessionId = session.id;
@@ -236,10 +246,35 @@
         currentAssistantEl = null;
         inFlight = false;
         pendingUserEl = null; pendingUserText = null; pendingPill = null;
+        rememberSession(session.id);
+
+        // Load session history before connecting the live stream
+        try {
+            const resp = await fetch("/api/terminal/session/" + session.id + "/history", {credentials: "same-origin"});
+            if (resp.ok) {
+                const data = await resp.json();
+                const msgs = data.messages || [];
+                for (const m of msgs) {
+                    if (m.role === "user") {
+                        appendLine("term-user", "> " + m.content);
+                    } else if (m.role === "assistant") {
+                        const el = document.createElement("div");
+                        el.className = "term-line term-assistant";
+                        el.dataset.prefix = (currentMindName || "mind") + " > ";
+                        el.textContent = el.dataset.prefix + m.content;
+                        feed.appendChild(el);
+                        feed.scrollTop = feed.scrollHeight;
+                    }
+                }
+                if (msgs.length > 0) {
+                    appendLine("term-system", "— history · live below —");
+                }
+            }
+        } catch(e) { /* swallow — history is optional */ }
+
         if (session.summary && session.summary !== "New session") {
             appendLine("term-system", "context: " + session.summary);
         }
-        rememberSession(session.id);
         connectStream(session.id);
         input.focus();
     }
