@@ -1026,6 +1026,15 @@ nav ul li.user-controls {
 }
 
 .term-action-btn.term-speaker-on {
-    color: #4ee8fc;
-    text-shadow: 0 0 6px rgba(78, 232, 252, 0.5);
+    color: #061018;
+    background: #4ee8fc;
+    border-color: #4ee8fc;
+    font-weight: 600;
+    box-shadow: 0 0 8px rgba(78, 232, 252, 0.55);
+}
+
+.term-action-btn.term-speaker-on:hover {
+    color: #061018;
+    background: #c9a84c;
+    border-color: #c9a84c;
 }
