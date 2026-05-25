@@ -157,31 +157,10 @@ def _render_markdown(md_path: Path) -> str:
     )
 
 
-def _safe_next_path(next_path: str | None, fallback: str = "/console") -> str:
+def _safe_next_path(next_path: str | None, fallback: str = "/terminal") -> str:
     if next_path and next_path.startswith("/") and not next_path.startswith("//"):
         return next_path
     return fallback
-
-
-def _filter_console_sessions(sessions: dict | list) -> list[dict]:
-    if not isinstance(sessions, list):
-        return []
-
-    now = int(time.time())
-    cutoff = now - 86400
-
-    filtered = [
-        session for session in sessions
-        if int(session.get("last_active", 0)) >= cutoff
-    ]
-    order = {"running": 0, "idle": 1, "closed": 2}
-    filtered.sort(
-        key=lambda session: (
-            order.get(session.get("status", "closed"), 9),
-            -float(session.get("last_active", 0)),
-        )
-    )
-    return filtered
 
 
 def _login_redirect_for(request: Request) -> RedirectResponse:
@@ -319,7 +298,7 @@ async def canvas(request: Request, doc: str | None = None, dir: str = "backlog")
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "/console"):
+async def login_page(request: Request, next: str = "/terminal"):
     current_user = get_current_user_from_request(request)
     if current_user:
         return RedirectResponse(url=_safe_next_path(next), status_code=303)
@@ -331,7 +310,7 @@ async def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    next: str = Form("/console"),
+    next: str = Form("/terminal"),
 ):
     user = verify_user_credentials(username, password)
     if not user:
@@ -352,17 +331,6 @@ async def logout():
     response = RedirectResponse(url="/login", status_code=303)
     clear_session_cookie(response)
     return response
-
-
-@app.get("/console", response_class=HTMLResponse)
-async def console(request: Request):
-    if not get_current_user_from_request(request):
-        return _login_redirect_for(request)
-    try:
-        sessions = _filter_console_sessions(await _gateway_json("/sessions"))
-    except Exception:
-        sessions = []
-    return _render_template(request, "console.html", initial_sessions=sessions)
 
 
 @app.get("/graph/data")
@@ -717,12 +685,6 @@ async def api_memory_rows(
         "limit": safe_limit,
         "offset": safe_offset,
     }
-
-
-@app.get("/api/console/sessions")
-async def api_console_sessions(user: dict = Depends(require_auth)):
-    del user
-    return _filter_console_sessions(await _gateway_json("/sessions"))
 
 
 @app.get("/api/console/{session_id}/stream")

@@ -637,7 +637,7 @@ nav ul li.user-controls {
     box-shadow: 0 18px 40px rgba(7, 9, 15, 0.28);
 }
 
-.console-kicker {
+.login-kicker {
     color: #38bdf8;
     text-transform: uppercase;
     letter-spacing: 0.22em;
@@ -645,8 +645,7 @@ nav ul li.user-controls {
     margin: 0 0 0.75rem;
 }
 
-.login-panel h1,
-.console-hero h1 {
+.login-panel h1 {
     margin: 0 0 0.75rem;
     color: #f8fbff;
 }
@@ -676,150 +675,6 @@ nav ul li.user-controls {
     font-weight: bold;
 }
 
-.console-page {
-    padding-bottom: 2rem;
-}
-
-.console-hero {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-}
-
-.console-hero-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    align-items: flex-end;
-    color: #8fb9cf;
-    white-space: nowrap;
-}
-
-.console-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
-
-.mind-card {
-    min-height: 340px;
-    max-height: 680px;
-    display: flex;
-    flex-direction: column;
-    background: linear-gradient(180deg, rgba(13, 17, 23, 0.98), rgba(10, 14, 25, 0.98));
-    border: 1px solid #1e2d3d;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 14px 28px rgba(7, 9, 15, 0.2);
-}
-
-.mind-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.8rem 1rem;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.12);
-    background: rgba(13, 26, 38, 0.95);
-    color: #9db2c3;
-}
-
-.mind-name {
-    color: #38bdf8;
-}
-
-.session-short {
-    color: #58708a;
-    margin-left: 0.35rem;
-}
-
-.status-dot {
-    display: inline-block;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    margin-right: 0.45rem;
-    background: #475569;
-}
-
-.mind-card[data-status="running"] .status-dot {
-    background: #22c55e;
-}
-
-.mind-card[data-status="idle"] .status-dot {
-    background: #f59e0b;
-}
-
-.card-feed {
-    flex: 1;
-    overflow: auto;
-    padding: 0.9rem 1rem 1rem;
-    font-size: 0.78rem;
-    line-height: 1.55;
-    color: #dce8f0;
-}
-
-.feed-line {
-    margin-bottom: 0.45rem;
-    word-break: break-word;
-}
-
-.event-user {
-    color: #94a3b8;
-}
-
-.event-assistant {
-    color: #dce8f0;
-}
-
-.event-tool,
-.event-result {
-    color: #fbbf24;
-}
-
-.event-system {
-    color: #64748b;
-    font-style: italic;
-}
-
-.card-input-bar {
-    display: flex;
-    gap: 0;
-    border-top: 1px solid #1e3a4f;
-    background: #0b1a24;
-}
-
-.card-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: #dce8f0;
-    font-family: inherit;
-    font-size: 0.78rem;
-    padding: 0.55rem 0.75rem;
-}
-
-.card-input::placeholder {
-    color: #334d5e;
-}
-
-.card-input-bar button {
-    background: transparent;
-    border: none;
-    border-left: 1px solid #1e3a4f;
-    color: #4a8fa8;
-    font-size: 0.95rem;
-    padding: 0 0.75rem;
-    cursor: pointer;
-    transition: color 0.15s;
-}
-
-.card-input-bar button:hover {
-    color: #c9a84c;
-}
-
 @media (max-width: 768px) {
     .auth-shell {
         padding-top: 1rem;
@@ -827,14 +682,6 @@ nav ul li.user-controls {
 
     .login-panel {
         padding: 1.25rem;
-    }
-
-    .console-hero {
-        flex-direction: column;
-    }
-
-    .console-hero-meta {
-        align-items: flex-start;
     }
 }
 

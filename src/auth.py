@@ -1,4 +1,4 @@
-"""Authentication helpers for the Spark to Bloom console."""
+"""Authentication helpers for the Spark to Bloom terminal."""
 
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ def create_user(
     db_path: Path | None = None,
     replace: bool = False,
 ) -> dict[str, Any]:
-    """Create a console user."""
+    """Create a terminal user."""
     normalized = username.strip().lower()
     if not normalized:
         raise ValueError("username must not be empty")

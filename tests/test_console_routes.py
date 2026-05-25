@@ -23,51 +23,6 @@ def _authed_client(tmp_path, monkeypatch):
     return client
 
 
-def test_console_redirects_to_login_when_unauthenticated(tmp_path, monkeypatch):
-    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
-    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
-    client = TestClient(main_mod.app)
-
-    response = client.get("/console", follow_redirects=False)
-
-    assert response.status_code == 303
-    assert response.headers["location"].startswith("/login?next=/console")
-
-
-def test_console_page_renders_when_session_preload_fails(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    with patch("main._gateway_json", AsyncMock(side_effect=RuntimeError("boom"))):
-        response = client.get("/console")
-
-    assert response.status_code == 200
-    assert "Hive Mind Live Console" in response.text
-
-
-def test_console_page_renders_preloaded_session_cards(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    with patch("main._gateway_json", AsyncMock(return_value=[
-        {"id": "sess-1", "mind_id": "nagatha", "status": "running", "last_active": 2000000001},
-    ])):
-        response = client.get("/console")
-
-    assert response.status_code == 200
-    assert 'data-session-id="sess-1"' in response.text
-    assert "watching live events" in response.text
-
-
-def test_console_page_renders_user_menu_control(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    with patch("main._gateway_json", AsyncMock(return_value=[])):
-        response = client.get("/console")
-
-    assert response.status_code == 200
-    assert "user-menu-button" in response.text
-    assert "log out" in response.text
-
-
 def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
     monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
     monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
@@ -76,29 +31,13 @@ def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
 
     response = client.post(
         "/login",
-        data={"username": "daniel", "password": "secret-pass", "next": "/console"},
+        data={"username": "daniel", "password": "secret-pass", "next": "/terminal"},
         follow_redirects=False,
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/console"
+    assert response.headers["location"] == "/terminal"
     assert auth.SESSION_COOKIE_NAME in response.cookies
-
-
-def test_console_sessions_filters_and_sorts(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-    sessions = [
-        {"id": "old", "mind_id": "ada", "status": "running", "last_active": 1},
-        {"id": "idle", "mind_id": "bob", "status": "idle", "last_active": 2000000000},
-        {"id": "run", "mind_id": "nagatha", "status": "running", "last_active": 2000000001},
-    ]
-
-    with patch("main._gateway_json", AsyncMock(return_value=sessions)):
-        response = client.get("/api/console/sessions")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert [item["id"] for item in data] == ["run", "idle"]
 
 
 def test_console_stream_proxies_sse(tmp_path, monkeypatch):
