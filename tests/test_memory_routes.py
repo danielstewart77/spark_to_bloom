@@ -98,6 +98,31 @@ def test_memory_rows_rejects_sql_injection_in_table_name(tmp_path, monkeypatch):
     assert response.status_code == 404
 
 
+def test_memory_rows_renders_blob_columns_as_placeholder(tmp_path, monkeypatch):
+    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
+    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
+    lucent_path = tmp_path / "lucent.db"
+    conn = sqlite3.connect(lucent_path)
+    conn.execute("CREATE TABLE vec_rows (id INTEGER PRIMARY KEY, body TEXT, embedding BLOB)")
+    conn.execute(
+        "INSERT INTO vec_rows (body, embedding) VALUES (?, ?)",
+        ("hello", bytes([0xBA, 0xAD, 0xF0, 0x0D, 0x01, 0x02, 0x03])),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("LUCENT_DB_PATH", str(lucent_path))
+    user = auth.create_user("daniel", "secret-pass", is_admin=True, replace=True)
+    client = TestClient(main_mod.app)
+    client.cookies.set(auth.SESSION_COOKIE_NAME, auth.create_session_token(user))
+
+    response = client.get("/api/memory/rows?table=vec_rows")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rows"][0]["body"] == "hello"
+    assert payload["rows"][0]["embedding"] == "<BLOB 7 bytes>"
+
+
 def test_memory_endpoints_require_auth(tmp_path, monkeypatch):
     monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
     monkeypatch.setenv("STB_SECRET_KEY", "test-secret")

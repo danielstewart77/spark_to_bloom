@@ -644,6 +644,12 @@ def _open_lucent_readonly() -> sqlite3.Connection:
     return conn
 
 
+def _memory_cell_for_json(value):
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<BLOB {len(bytes(value))} bytes>"
+    return value
+
+
 def _list_lucent_tables(conn: sqlite3.Connection) -> list[str]:
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -695,7 +701,7 @@ async def api_memory_rows(
         ]
         total = int(conn.execute(f'SELECT COUNT(*) AS c FROM "{table}"').fetchone()["c"])
         rows = [
-            {col: row[col] for col in columns}
+            {col: _memory_cell_for_json(row[col]) for col in columns}
             for row in conn.execute(
                 f'SELECT * FROM "{table}" LIMIT ? OFFSET ?',
                 (safe_limit, safe_offset),
