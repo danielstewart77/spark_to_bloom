@@ -315,8 +315,7 @@
 
     function autoGrowInput() {
         input.style.height = "auto";
-        const max = Math.floor(window.innerHeight * 0.4);
-        input.style.height = Math.min(input.scrollHeight, max) + "px";
+        input.style.height = input.scrollHeight + "px";
     }
     input.addEventListener("input", autoGrowInput);
     input.addEventListener("keydown", function(e) {
@@ -386,6 +385,7 @@
                 }
             }
             input.value = (micFinalText + " " + interim).trim();
+            autoGrowInput();
         };
 
         recognition.onerror = function() {

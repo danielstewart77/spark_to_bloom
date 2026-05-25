@@ -960,10 +960,9 @@ nav ul li.user-controls {
     padding: 0.2rem 0;
     caret-color: #c9a84c;
     resize: none;
-    overflow-y: auto;
+    overflow: hidden;
     line-height: 1.4;
     min-height: 1.4em;
-    max-height: 40vh;
     width: 100%;
     white-space: pre-wrap;
     word-break: break-word;
