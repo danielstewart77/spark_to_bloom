@@ -470,17 +470,19 @@
         recognition.lang = (navigator.language || "en-US");
 
         recognition.onresult = function(event) {
+            let finalText = "";
             let interim = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
+            for (let i = 0; i < event.results.length; i++) {
                 const res = event.results[i];
                 const transcript = res[0] && res[0].transcript ? res[0].transcript : "";
                 if (res.isFinal) {
-                    micFinalText = (micFinalText + " " + transcript).trim();
+                    finalText += (finalText ? " " : "") + transcript.trim();
                 } else {
                     interim += transcript;
                 }
             }
-            input.value = (micFinalText + " " + interim).trim();
+            const preserved = micFinalText ? micFinalText + " " : "";
+            input.value = (preserved + finalText + " " + interim).replace(/\s+/g, " ").trim();
             autoGrowInput();
         };
 
@@ -491,6 +493,7 @@
 
         recognition.onend = function() {
             if (micActive) {
+                micFinalText = input.value.trim();
                 try { recognition.start(); } catch(e) { micActive = false; setMicLabel("off"); }
             } else {
                 setMicLabel("off");
