@@ -259,9 +259,52 @@ async def linkedin(request: Request):
 
 
 @app.get("/canvas", response_class=HTMLResponse)
-async def canvas(request: Request):
-    html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
-    return _render_template(request, "canvas.html", content=html_content)
+async def canvas(request: Request, doc: str | None = None, dir: str = "backlog"):
+    backlog_dir = BASE_DIR / "backlog"
+    plans_dir = BASE_DIR / "plans"
+
+    def _scan_dir(d: Path) -> list:
+        items = []
+        if d.exists():
+            for f in sorted(d.glob("*.md"), key=lambda p: p.stem):
+                slug = f.stem
+                label = slug.replace("-", " ").title()
+                items.append({"slug": slug, "label": label})
+        return items
+
+    backlog_items = _scan_dir(backlog_dir)
+    plans_items = _scan_dir(plans_dir)
+
+    active_doc = None
+    active_dir = dir if dir in ("backlog", "plans") else "backlog"
+    source_dir = plans_dir if active_dir == "plans" else backlog_dir
+
+    if doc:
+        doc_path = source_dir / f"{doc}.md"
+        try:
+            resolved = doc_path.resolve()
+            if (
+                str(resolved).startswith(str(source_dir.resolve()))
+                and resolved.exists()
+                and resolved.is_file()
+            ):
+                html_content = _render_markdown(resolved)
+                active_doc = doc
+            else:
+                html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+        except (OSError, ValueError):
+            html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+    else:
+        html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+
+    return _render_template(
+        request, "canvas.html",
+        content=html_content,
+        backlog_items=backlog_items,
+        plans_items=plans_items,
+        active_doc=active_doc,
+        active_dir=active_dir,
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -356,6 +399,40 @@ async def api_console_stream(session_id: str, user: dict = Depends(require_auth)
         _proxy_session_events(session_id),
         media_type="text/event-stream",
     )
+
+
+async def _drain_gateway_message(session_id: str, text: str) -> None:
+    url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}/message"
+
+    def _do_post():
+        data = json.dumps({"content": text}).encode()
+        req = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                while True:
+                    chunk = resp.read(4096)
+                    if not chunk:
+                        break
+        except Exception:
+            pass
+
+    await asyncio.to_thread(_do_post)
+
+
+@app.post("/api/console/{session_id}/message")
+async def api_console_send_message(
+    session_id: str, request: Request, user: dict = Depends(require_auth)
+):
+    del user
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    asyncio.create_task(_drain_gateway_message(session_id, text))
+    return {"status": "sent"}
 
 
 @app.get("/pages/{subpath:path}", response_class=HTMLResponse)

@@ -30,6 +30,10 @@
                 <div class="feed-line event-system event-summary">summary: {{ session.summary }}</div>
                 {% endif %}
             </div>
+            <form class="card-input-bar" autocomplete="off">
+                <input class="card-input" type="text" placeholder="send message…" aria-label="message">
+                <button type="submit">↵</button>
+            </form>
         </article>
         {% endfor %}
     </section>
@@ -111,6 +115,10 @@
                 <span class="session-age"></span>
             </header>
             <div class="card-feed"></div>
+            <form class="card-input-bar" autocomplete="off">
+                <input class="card-input" type="text" placeholder="send message…" aria-label="message">
+                <button type="submit">↵</button>
+            </form>
         `;
         grid.appendChild(card);
         cards.set(session.id, card);
@@ -118,7 +126,32 @@
         replayHistory(card);
         ensurePlaceholder(card, session);
         connectStream(session.id);
+        bindInputBar(card, session.id);
         return card;
+    }
+
+    function bindInputBar(card, sessionId) {
+        const form = card.querySelector(".card-input-bar");
+        if (!form || form.dataset.bound) return;
+        form.dataset.bound = "1";
+        form.addEventListener("submit", async function (e) {
+            e.preventDefault();
+            const input = form.querySelector(".card-input");
+            const text = (input.value || "").trim();
+            if (!text) return;
+            input.value = "";
+            renderLine({type: "user", content: text}, sessionId);
+            try {
+                await fetch("/api/console/" + sessionId + "/message", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({text: text}),
+                });
+            } catch (err) {
+                renderLine({type: "system", content: "send_error: " + err.message}, sessionId);
+            }
+        });
     }
 
     function registerExistingCards() {
@@ -126,6 +159,7 @@
             const sessionId = card.dataset.sessionId;
             if (!sessionId) return;
             cards.set(sessionId, card);
+            bindInputBar(card, sessionId);
         });
     }
 

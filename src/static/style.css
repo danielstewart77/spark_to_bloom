@@ -783,6 +783,43 @@ nav ul li.user-controls {
     font-style: italic;
 }
 
+.card-input-bar {
+    display: flex;
+    gap: 0;
+    border-top: 1px solid #1e3a4f;
+    background: #0b1a24;
+}
+
+.card-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #dce8f0;
+    font-family: inherit;
+    font-size: 0.78rem;
+    padding: 0.55rem 0.75rem;
+}
+
+.card-input::placeholder {
+    color: #334d5e;
+}
+
+.card-input-bar button {
+    background: transparent;
+    border: none;
+    border-left: 1px solid #1e3a4f;
+    color: #4a8fa8;
+    font-size: 0.95rem;
+    padding: 0 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.card-input-bar button:hover {
+    color: #c9a84c;
+}
+
 @media (max-width: 768px) {
     .auth-shell {
         padding-top: 1rem;
