@@ -56,6 +56,10 @@
     let reattachTimer = null;
     let reattachStartedAt = 0;
     let sessionWasClosed = false;
+    let inFlight = false;
+    let pendingUserText = null;
+    let pendingUserEl = null;
+    let pendingPill = null;
 
     function appendLine(cls, text) {
         currentAssistantEl = null;
@@ -94,6 +98,7 @@
 
     function handleEvent(event) {
         if (event.type === "assistant") {
+            inFlight = true;
             const chunk = extractText(event);
             if (!chunk) return;
             if (!currentAssistantEl) {
@@ -105,10 +110,21 @@
             scheduleTtsFlush();
         } else if (event.type === "user") {
             const text = extractText(event);
-            if (text) appendLine("term-user", "> " + text);
+            if (pendingUserEl && text === pendingUserText) {
+                // Server confirmed our pending message — undim it
+                pendingUserEl.classList.remove("term-pending");
+                if (pendingPill) { pendingPill.remove(); pendingPill = null; }
+                pendingUserEl = null;
+                pendingUserText = null;
+                inFlight = false;
+            } else if (text) {
+                appendLine("term-user", "> " + text);
+            }
             flushTtsNow();
         } else if (event.type === "session_closed") {
             currentAssistantEl = null;
+            inFlight = false;
+            pendingUserEl = null; pendingUserText = null; pendingPill = null;
             sessionWasClosed = true;
             disconnectStream();
             beginReattachLoop();
@@ -218,6 +234,8 @@
         sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + session.status;
         feed.innerHTML = "";
         currentAssistantEl = null;
+        inFlight = false;
+        pendingUserEl = null; pendingUserText = null; pendingPill = null;
         if (session.summary && session.summary !== "New session") {
             appendLine("term-system", "context: " + session.summary);
         }
@@ -340,6 +358,21 @@
     });
     setTimeout(autoGrowInput, 0);
 
+    async function doInterrupt(pill) {
+        pill.disabled = true;
+        pill.textContent = "interrupting…";
+        try {
+            await fetch("/api/console/" + currentSessionId + "/interrupt", {
+                method: "POST",
+                credentials: "same-origin",
+            });
+        } catch(e) {
+            pill.disabled = false;
+            pill.textContent = "interrupt";
+        }
+        // State clears when the server echoes the user event back
+    }
+
     form.addEventListener("submit", async function(e) {
         e.preventDefault();
         const text = input.value.trim();
@@ -347,6 +380,27 @@
         input.value = "";
         autoGrowInput();
         currentAssistantEl = null;
+
+        // Show message immediately (dimmed until server echoes it back)
+        if (!pendingUserEl) {
+            const lineEl = document.createElement("div");
+            lineEl.className = "term-line term-user term-pending";
+            lineEl.textContent = "> " + text;
+            if (inFlight) {
+                const pill = document.createElement("button");
+                pill.type = "button";
+                pill.className = "term-interrupt-pill";
+                pill.textContent = "interrupt";
+                pill.addEventListener("click", function() { doInterrupt(pill); });
+                lineEl.appendChild(pill);
+                pendingPill = pill;
+            }
+            feed.appendChild(lineEl);
+            feed.scrollTop = feed.scrollHeight;
+            pendingUserEl = lineEl;
+            pendingUserText = text;
+        }
+
         try {
             await fetch("/api/console/" + currentSessionId + "/message", {
                 method: "POST",
@@ -356,6 +410,10 @@
             });
         } catch(err) {
             appendLine("term-system", "send error: " + err.message);
+            if (pendingUserEl) {
+                pendingUserEl.remove();
+                pendingUserEl = null; pendingUserText = null; pendingPill = null;
+            }
         }
     });
 

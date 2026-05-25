@@ -738,6 +738,27 @@ async def api_console_send_message(
     return {"status": "sent"}
 
 
+@app.post("/api/console/{session_id}/interrupt")
+async def api_console_interrupt(session_id: str, user: dict = Depends(require_auth)):
+    del user
+
+    def _do_post():
+        url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}/interrupt"
+        req = urllib.request.Request(
+            url, data=b"",
+            headers={"Content-Type": "application/json", **_gateway_headers()},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    try:
+        return await asyncio.to_thread(_do_post)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail="Gateway interrupt failed") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
+
+
 @app.get("/pages/{subpath:path}", response_class=HTMLResponse)
 async def page(request: Request, subpath: str):
     md_path = BASE_DIR / "templates" / "pages" / subpath

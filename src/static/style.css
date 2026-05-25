@@ -886,6 +886,37 @@ nav ul li.user-controls {
     border-color: #c9a84c;
 }
 
+.term-user.term-pending {
+    opacity: 0.38;
+}
+
+.term-interrupt-pill {
+    display: inline-block;
+    margin-left: 0.6rem;
+    background: transparent;
+    border: 1px solid #7a1a1a;
+    color: #c04040;
+    border-radius: 3px;
+    padding: 0 0.38rem;
+    font-size: 0.67rem;
+    font-family: inherit;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+    transition: background 0.12s, color 0.12s;
+    line-height: 1.5;
+}
+
+.term-interrupt-pill:hover:not(:disabled) {
+    background: #7a1a1a;
+    color: #ffd0d0;
+}
+
+.term-interrupt-pill:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* ── Memory page ──────────────────────────────────────── */
 
 .memory-page {
