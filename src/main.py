@@ -397,7 +397,7 @@ async def terminal(request: Request):
         minds = await _gateway_json("/broker/minds")
         if not isinstance(minds, list):
             minds = []
-        minds = [m for m in minds if isinstance(m, dict) and m.get("name") not in ("skippy",)]
+        minds = [m for m in minds if isinstance(m, dict)]
         minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
     except Exception:
         minds = []
@@ -476,7 +476,7 @@ async def api_terminal_selector(user: dict = Depends(require_auth)):
         minds = await _gateway_json("/broker/minds")
         if not isinstance(minds, list):
             minds = []
-        minds = [m for m in minds if isinstance(m, dict) and m.get("name") not in ("skippy",)]
+        minds = [m for m in minds if isinstance(m, dict)]
         minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
     except Exception:
         minds = []

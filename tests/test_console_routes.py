@@ -206,6 +206,32 @@ def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypat
     assert "do the thing" in body
 
 
+def test_terminal_page_includes_skippy(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    now = int(__import__("time").time())
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/broker/minds":
+            return [
+                {"id": "ada-id", "name": "ada"},
+                {"id": "skippy-id", "name": "skippy"},
+            ]
+        if path == "/sessions":
+            return [
+                {"id": "skippy-sess-1", "mind_id": "skippy-id", "status": "running",
+                 "last_active": now - 10, "summary": "hi skippy"},
+            ]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "skippy" in body
+    assert 'value="session:skippy-sess-1"' in body
+
+
 def test_api_terminal_selector_returns_grouped_payload(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
     now = int(__import__("time").time())
