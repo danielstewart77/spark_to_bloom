@@ -31,6 +31,7 @@
         <form id="term-input-form" class="term-input-bar" autocomplete="off">
             <span class="term-prompt">&gt;</span>
             <input id="term-input" class="term-input" type="text" placeholder="type a message…" aria-label="message" autofocus>
+            <button id="term-mic-btn" type="button" class="term-send-btn" title="hold or toggle to dictate" hidden>mic</button>
             <button type="submit" class="term-send-btn">send</button>
         </form>
     </div>
@@ -252,6 +253,89 @@
             appendLine("term-system", "send error: " + err.message);
         }
     });
+
+    // --- Voice input (Web Speech API) ---
+    const micBtn = document.getElementById("term-mic-btn");
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let micActive = false;
+    let micFinalText = "";
+
+    function setMicLabel(state) {
+        if (!micBtn) return;
+        if (state === "on") {
+            micBtn.textContent = "listening…";
+            micBtn.classList.add("term-mic-on");
+        } else if (state === "error") {
+            micBtn.textContent = "mic error";
+            micBtn.classList.remove("term-mic-on");
+        } else {
+            micBtn.textContent = "mic";
+            micBtn.classList.remove("term-mic-on");
+        }
+    }
+
+    if (SpeechRecognitionCtor && micBtn) {
+        micBtn.hidden = false;
+        recognition = new SpeechRecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = (navigator.language || "en-US");
+
+        recognition.onresult = function(event) {
+            let interim = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const res = event.results[i];
+                const transcript = res[0] && res[0].transcript ? res[0].transcript : "";
+                if (res.isFinal) {
+                    micFinalText = (micFinalText + " " + transcript).trim();
+                } else {
+                    interim += transcript;
+                }
+            }
+            input.value = (micFinalText + " " + interim).trim();
+        };
+
+        recognition.onerror = function() {
+            setMicLabel("error");
+            micActive = false;
+        };
+
+        recognition.onend = function() {
+            if (micActive) {
+                try { recognition.start(); } catch(e) { micActive = false; setMicLabel("off"); }
+            } else {
+                setMicLabel("off");
+            }
+        };
+
+        micBtn.addEventListener("click", function() {
+            if (!micActive) {
+                micFinalText = input.value.trim();
+                try {
+                    recognition.start();
+                    micActive = true;
+                    setMicLabel("on");
+                    input.focus();
+                } catch(e) {
+                    setMicLabel("error");
+                }
+            } else {
+                micActive = false;
+                try { recognition.stop(); } catch(e) {}
+                setMicLabel("off");
+            }
+        });
+
+        form.addEventListener("submit", function() {
+            if (micActive) {
+                micActive = false;
+                try { recognition.stop(); } catch(e) {}
+                setMicLabel("off");
+            }
+            micFinalText = "";
+        });
+    }
 
     // Boot: load the first selectable option (defaults to first load entry if present, else first new entry)
     const loadOptions = Array.from(mindSelect.options).filter(o => o.dataset.action === "load");

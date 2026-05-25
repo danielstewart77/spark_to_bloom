@@ -206,6 +206,24 @@ def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypat
     assert "do the thing" in body
 
 
+def test_terminal_page_renders_mic_button(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        if path == "/sessions":
+            return []
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    assert 'id="term-mic-btn"' in response.text
+    assert "SpeechRecognition" in response.text
+
+
 def test_terminal_page_includes_skippy(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
     now = int(__import__("time").time())

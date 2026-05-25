@@ -976,3 +976,8 @@ nav ul li.user-controls {
 .term-send-btn:hover {
     color: #c9a84c;
 }
+
+.term-send-btn.term-mic-on {
+    color: #c94c4c;
+    text-shadow: 0 0 6px rgba(201, 76, 76, 0.6);
+}
