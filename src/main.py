@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -487,6 +487,42 @@ async def api_terminal_selector(user: dict = Depends(require_auth)):
     except Exception:
         all_sessions = []
     return _build_terminal_selector(minds, all_sessions)
+
+
+@app.get("/api/terminal/active")
+async def api_terminal_active(
+    mind_id: str,
+    exclude: str = "",
+    user: dict = Depends(require_auth),
+):
+    """Return the most-recent live session for the given mind without auto-creating.
+
+    Used by the browser to seamlessly reattach when a session rotates out from
+    under it. Excludes the dying session via ``exclude=<session_id>`` so the
+    browser doesn't immediately reattach to the corpse during the rotation
+    window. Returns 204 when no live successor exists yet.
+    """
+    del user
+    try:
+        sessions = await _gateway_json("/sessions")
+    except Exception:
+        sessions = []
+    if not isinstance(sessions, list):
+        sessions = []
+    now = int(time.time())
+    cutoff = now - 86400
+    live = [
+        s for s in sessions
+        if isinstance(s, dict)
+        and s.get("mind_id") == mind_id
+        and s.get("id") != exclude
+        and int(s.get("last_active", 0)) >= cutoff
+        and s.get("status") in ("running", "idle")
+    ]
+    if not live:
+        return Response(status_code=204)
+    live.sort(key=lambda s: -float(s.get("last_active", 0)))
+    return live[0]
 
 
 @app.get("/api/terminal/session")

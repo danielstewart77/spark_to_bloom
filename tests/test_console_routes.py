@@ -250,6 +250,75 @@ def test_terminal_page_includes_skippy(tmp_path, monkeypatch):
     assert 'value="session:skippy-sess-1"' in body
 
 
+def test_api_terminal_active_returns_running_session_for_mind(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    now = int(__import__("time").time())
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/sessions":
+            return [
+                {"id": "old-1", "mind_id": "ada-id", "status": "closed", "last_active": now - 10},
+                {"id": "live-1", "mind_id": "ada-id", "status": "running", "last_active": now - 5},
+            ]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/api/terminal/active?mind_id=ada-id")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "live-1"
+
+
+def test_api_terminal_active_excludes_dying_session(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    now = int(__import__("time").time())
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/sessions":
+            return [
+                {"id": "dying", "mind_id": "ada-id", "status": "running", "last_active": now - 1},
+                {"id": "successor", "mind_id": "ada-id", "status": "running", "last_active": now - 3},
+            ]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/api/terminal/active?mind_id=ada-id&exclude=dying")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "successor"
+
+
+def test_api_terminal_active_returns_204_when_no_live_session(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/sessions":
+            return []
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/api/terminal/active?mind_id=ada-id")
+
+    assert response.status_code == 204
+
+
+def test_terminal_page_contains_rotation_reattach_logic(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "/api/terminal/active" in body
+    assert "reattach" in body.lower() or "reconnect" in body.lower()
+
+
 def test_api_terminal_selector_returns_grouped_payload(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
     now = int(__import__("time").time())

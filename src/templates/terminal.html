@@ -48,8 +48,13 @@
     const refreshBtn = document.getElementById("term-refresh");
 
     let currentSessionId = null;
+    let currentMindId = null;
+    let currentMindName = null;
     let eventSource = null;
     let currentAssistantEl = null;
+    let reattachTimer = null;
+    let reattachStartedAt = 0;
+    let sessionWasClosed = false;
 
     function appendLine(cls, text) {
         currentAssistantEl = null;
@@ -100,8 +105,9 @@
             if (text) appendLine("term-user", "> " + text);
         } else if (event.type === "session_closed") {
             currentAssistantEl = null;
-            appendLine("term-system", "— session closed —");
+            sessionWasClosed = true;
             disconnectStream();
+            beginReattachLoop();
         }
         // tool events are intentionally ignored
     }
@@ -117,14 +123,85 @@
             try { handleEvent(JSON.parse(msg.data)); } catch(e) {}
         };
         eventSource.onerror = function() {
+            if (sessionWasClosed) return;
             setTimeout(function() {
-                if (currentSessionId === sessionId) connectStream(sessionId);
+                if (currentSessionId === sessionId && !sessionWasClosed) connectStream(sessionId);
             }, 3000);
         };
     }
 
-    function setSession(session) {
+    function cancelReattachLoop() {
+        if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
+    }
+
+    function beginReattachLoop() {
+        cancelReattachLoop();
+        if (!currentMindId) {
+            appendLine("term-system", "— session closed —");
+            return;
+        }
+        reattachStartedAt = Date.now();
+        appendLine("term-system", "session rotated — reattaching to " + (currentMindName || "mind") + "…");
+        pollForSuccessor();
+    }
+
+    async function pollForSuccessor() {
+        if (!currentMindId) return;
+        const deadId = currentSessionId || "";
+        const mindId = currentMindId;
+        try {
+            const resp = await fetch(
+                "/api/terminal/active?mind_id=" + encodeURIComponent(mindId) +
+                "&exclude=" + encodeURIComponent(deadId),
+                {credentials: "same-origin"}
+            );
+            if (resp.status === 200) {
+                const successor = await resp.json();
+                if (successor && successor.id) {
+                    attachSuccessor(successor);
+                    return;
+                }
+            }
+        } catch(err) { /* swallow; retry below */ }
+
+        const elapsed = Date.now() - reattachStartedAt;
+        if (elapsed >= 30000) {
+            try {
+                const created = await fetch("/api/terminal/session", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({mind_id: mindId}),
+                });
+                if (created.ok) {
+                    const sess = await created.json();
+                    attachSuccessor(sess);
+                    return;
+                }
+            } catch(err) { /* fall through */ }
+            appendLine("term-system", "reattach failed — pick a session above to retry");
+            return;
+        }
+        reattachTimer = setTimeout(pollForSuccessor, 2000);
+    }
+
+    function attachSuccessor(session) {
+        cancelReattachLoop();
+        sessionWasClosed = false;
+        appendLine("term-system", "reattached to " + (session.id || "").slice(0, 8));
         currentSessionId = session.id;
+        sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + (session.status || "running");
+        connectStream(session.id);
+        refreshSelector(session.id);
+    }
+
+    function setSession(session) {
+        cancelReattachLoop();
+        sessionWasClosed = false;
+        currentSessionId = session.id;
+        currentMindId = session.mind_id || currentMindId;
+        const opt = selectedOption();
+        if (opt && opt.dataset.mindName) currentMindName = opt.dataset.mindName;
         sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + session.status;
         feed.innerHTML = "";
         currentAssistantEl = null;
