@@ -52,7 +52,15 @@ HIVE_INIT_ALLOWED_FILES = {
 
 
 def _gateway_base_url() -> str:
-    return os.getenv("GATEWAY_API_URL") or os.getenv("GRAPH_API_URL") or "http://hive-comms:8424"
+    return os.getenv("GATEWAY_API_URL") or "http://hive-comms:8424"
+
+
+def _lucent_base_url() -> str:
+    return os.getenv("LUCENT_API_URL") or "http://hive-lucent:8424"
+
+
+def _lucent_bearer_token() -> str:
+    return os.getenv("LUCENT_BEARER_TOKEN", "")
 
 
 def _gateway_headers() -> dict:
@@ -336,13 +344,13 @@ async def logout():
 @app.get("/graph/data")
 async def graph_data(limit: int = 400, user: dict = Depends(require_auth)):
     del user
-    return get_graph_data(_gateway_base_url(), limit=limit)
+    return get_graph_data(_lucent_base_url(), limit=limit, bearer_token=_lucent_bearer_token())
 
 
 @app.get("/graph/public-data")
 async def graph_public_data(limit: int = 400, user: dict = Depends(require_auth)):
     del user
-    data = get_graph_data(_gateway_base_url(), limit=limit)
+    data = get_graph_data(_lucent_base_url(), limit=limit, bearer_token=_lucent_bearer_token())
     public_nodes = [n for n in data.get("nodes", []) if n.get("type") != "Person"]
     public_ids = {n["id"] for n in public_nodes}
     public_edges = [
