@@ -389,6 +389,76 @@ async def graph(request: Request):
     return _render_template(request, "graph.html")
 
 
+@app.get("/terminal", response_class=HTMLResponse)
+async def terminal(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    try:
+        minds = await _gateway_json("/broker/minds")
+        if not isinstance(minds, list):
+            minds = []
+        minds = [m for m in minds if isinstance(m, dict) and m.get("name") not in ("skippy",)]
+        minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
+    except Exception:
+        minds = []
+    return _render_template(request, "terminal.html", minds=minds)
+
+
+@app.get("/api/terminal/session")
+async def api_terminal_get_session(mind_id: str, user: dict = Depends(require_auth)):
+    del user
+    sessions = await _gateway_json("/sessions")
+    if not isinstance(sessions, list):
+        sessions = []
+    now = int(time.time())
+    cutoff = now - 86400
+    active = [
+        s for s in sessions
+        if s.get("mind_id") == mind_id
+        and int(s.get("last_active", 0)) >= cutoff
+        and s.get("status") in ("running", "idle")
+    ]
+    active.sort(key=lambda s: -float(s.get("last_active", 0)))
+    if active:
+        return active[0]
+    return await _create_gateway_session(mind_id)
+
+
+@app.post("/api/terminal/session")
+async def api_terminal_create_session(request: Request, user: dict = Depends(require_auth)):
+    del user
+    body = await request.json()
+    mind_id = (body.get("mind_id") or "").strip()
+    if not mind_id:
+        raise HTTPException(status_code=400, detail="mind_id is required")
+    return await _create_gateway_session(mind_id)
+
+
+async def _create_gateway_session(mind_id: str) -> dict:
+    def _do_post():
+        url = f"{_gateway_base_url().rstrip('/')}/sessions"
+        data = json.dumps({
+            "mind_id": mind_id,
+            "model": "sonnet",
+            "owner_type": "web",
+            "owner_ref": "terminal",
+            "client_ref": "terminal",
+        }).encode()
+        req = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json", **_gateway_headers()},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    try:
+        return await asyncio.to_thread(_do_post)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail="Failed to create session") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
+
+
 @app.get("/api/minds")
 async def api_minds(user: dict = Depends(require_auth)):
     del user

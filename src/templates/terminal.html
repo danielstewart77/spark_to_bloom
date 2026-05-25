@@ -1,0 +1,174 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="terminal-page">
+    <div class="term-shell">
+        <div class="term-topbar">
+            <select id="mind-select" class="term-mind-select">
+                {% for mind in minds %}
+                <option value="{{ mind.id }}" data-name="{{ mind.name }}">{{ mind.name }}</option>
+                {% endfor %}
+            </select>
+            <span id="term-session-info" class="term-session-info">no session</span>
+            <button id="term-new-session" class="term-action-btn" type="button">new session</button>
+        </div>
+        <div id="term-feed" class="term-feed" aria-live="polite"></div>
+        <form id="term-input-form" class="term-input-bar" autocomplete="off">
+            <span class="term-prompt">&gt;</span>
+            <input id="term-input" class="term-input" type="text" placeholder="type a message…" aria-label="message" autofocus>
+            <button type="submit" class="term-send-btn">send</button>
+        </form>
+    </div>
+</main>
+
+<script>
+(function () {
+    const feed = document.getElementById("term-feed");
+    const form = document.getElementById("term-input-form");
+    const input = document.getElementById("term-input");
+    const mindSelect = document.getElementById("mind-select");
+    const sessionInfo = document.getElementById("term-session-info");
+    const newSessionBtn = document.getElementById("term-new-session");
+
+    let currentSessionId = null;
+    let eventSource = null;
+    let currentAssistantEl = null;
+
+    function appendLine(cls, text) {
+        currentAssistantEl = null;
+        const el = document.createElement("div");
+        el.className = "term-line " + cls;
+        el.textContent = text;
+        feed.appendChild(el);
+        feed.scrollTop = feed.scrollHeight;
+        return el;
+    }
+
+    function startAssistantLine(mindName) {
+        currentAssistantEl = document.createElement("div");
+        currentAssistantEl.className = "term-line term-assistant";
+        currentAssistantEl.dataset.prefix = (mindName || "ada") + " > ";
+        currentAssistantEl.textContent = currentAssistantEl.dataset.prefix;
+        feed.appendChild(currentAssistantEl);
+        feed.scrollTop = feed.scrollHeight;
+    }
+
+    function appendAssistantChunk(text) {
+        if (!currentAssistantEl) return;
+        currentAssistantEl.textContent += text;
+        feed.scrollTop = feed.scrollHeight;
+    }
+
+    function extractText(event) {
+        const v = event.content || event.delta || event.text ||
+            (event.message && (event.message.content || event.message.text)) || "";
+        if (typeof v === "string") return v;
+        if (Array.isArray(v)) return v.map(function(i) {
+            return typeof i === "string" ? i : (i.text || i.content || "");
+        }).join("");
+        return v.text || v.content || "";
+    }
+
+    function handleEvent(event) {
+        if (event.type === "assistant") {
+            const chunk = extractText(event);
+            if (!chunk) return;
+            if (!currentAssistantEl) {
+                const mindName = mindSelect.selectedOptions[0] && mindSelect.selectedOptions[0].dataset.name;
+                startAssistantLine(mindName);
+            }
+            appendAssistantChunk(chunk);
+        } else if (event.type === "user") {
+            const text = extractText(event);
+            if (text) appendLine("term-user", "> " + text);
+        } else if (event.type === "session_closed") {
+            currentAssistantEl = null;
+            appendLine("term-system", "— session closed —");
+            disconnectStream();
+        }
+        // tool events are intentionally ignored
+    }
+
+    function disconnectStream() {
+        if (eventSource) { eventSource.close(); eventSource = null; }
+    }
+
+    function connectStream(sessionId) {
+        disconnectStream();
+        eventSource = new EventSource("/api/console/" + sessionId + "/stream");
+        eventSource.onmessage = function(msg) {
+            try { handleEvent(JSON.parse(msg.data)); } catch(e) {}
+        };
+        eventSource.onerror = function() {
+            setTimeout(function() {
+                if (currentSessionId === sessionId) connectStream(sessionId);
+            }, 3000);
+        };
+    }
+
+    function setSession(session) {
+        currentSessionId = session.id;
+        sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + session.status;
+        feed.innerHTML = "";
+        currentAssistantEl = null;
+        if (session.summary && session.summary !== "New session") {
+            appendLine("term-system", "context: " + session.summary);
+        }
+        connectStream(session.id);
+        input.focus();
+    }
+
+    async function loadSession(mindId) {
+        const resp = await fetch("/api/terminal/session?mind_id=" + mindId, {credentials: "same-origin"});
+        if (!resp.ok) { appendLine("term-system", "error loading session"); return; }
+        const session = await resp.json();
+        setSession(session);
+    }
+
+    async function createSession(mindId) {
+        const resp = await fetch("/api/terminal/session", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({mind_id: mindId}),
+        });
+        if (!resp.ok) { appendLine("term-system", "error creating session"); return; }
+        const session = await resp.json();
+        feed.innerHTML = "";
+        currentAssistantEl = null;
+        setSession(session);
+    }
+
+    mindSelect.addEventListener("change", function() {
+        loadSession(mindSelect.value);
+    });
+
+    newSessionBtn.addEventListener("click", function() {
+        createSession(mindSelect.value);
+    });
+
+    form.addEventListener("submit", async function(e) {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text || !currentSessionId) return;
+        input.value = "";
+        currentAssistantEl = null;
+        appendLine("term-user", "> " + text);
+        try {
+            await fetch("/api/console/" + currentSessionId + "/message", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text: text}),
+            });
+        } catch(err) {
+            appendLine("term-system", "send error: " + err.message);
+        }
+    });
+
+    // Boot: load session for default (first) mind
+    if (mindSelect.value) {
+        loadSession(mindSelect.value);
+    }
+})();
+</script>
+{% endblock %}

@@ -837,3 +837,142 @@ nav ul li.user-controls {
         align-items: flex-start;
     }
 }
+
+/* ── Terminal page ─────────────────────────────────────── */
+
+.terminal-page {
+    padding: 1.5rem 1rem 2rem;
+    display: flex;
+    justify-content: center;
+}
+
+.term-shell {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 180px);
+    min-height: 400px;
+    background: #080f18;
+    border: 1px solid #1e2d3d;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.term-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: #0b1724;
+    border-bottom: 1px solid #1e2d3d;
+    flex-shrink: 0;
+}
+
+.term-mind-select {
+    background: #0d1f30;
+    border: 1px solid #2a3f54;
+    border-radius: 5px;
+    color: #94c7e0;
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+}
+
+.term-session-info {
+    color: #4a6a7e;
+    font-size: 0.75rem;
+    flex: 1;
+}
+
+.term-action-btn {
+    background: transparent;
+    border: 1px solid #2a3f54;
+    border-radius: 5px;
+    color: #4a8fa8;
+    font-family: inherit;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.term-action-btn:hover {
+    color: #c9a84c;
+    border-color: #c9a84c;
+}
+
+.term-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.2rem;
+    font-size: 0.82rem;
+    line-height: 1.65;
+}
+
+.term-line {
+    margin-bottom: 0.35rem;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+.term-user {
+    color: #5ba3c4;
+}
+
+.term-assistant {
+    color: #dce8f0;
+}
+
+.term-system {
+    color: #3d5a6e;
+    font-style: italic;
+}
+
+.term-input-bar {
+    display: flex;
+    align-items: center;
+    border-top: 1px solid #1e2d3d;
+    background: #080f18;
+    flex-shrink: 0;
+    padding: 0 0.5rem 0 1rem;
+}
+
+.term-prompt {
+    color: #c9a84c;
+    font-size: 0.9rem;
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+}
+
+.term-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #dce8f0;
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.7rem 0;
+    caret-color: #c9a84c;
+}
+
+.term-input::placeholder {
+    color: #253d4e;
+}
+
+.term-send-btn {
+    background: transparent;
+    border: none;
+    color: #2a4d62;
+    font-family: inherit;
+    font-size: 0.75rem;
+    padding: 0 0.5rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.term-send-btn:hover {
+    color: #c9a84c;
+}
