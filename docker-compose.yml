@@ -5,8 +5,9 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
-      - GRAPH_API_URL=http://server:8420
-      - GATEWAY_API_URL=http://server:8420
+      - GRAPH_API_URL=http://hive-comms:8424
+      - GATEWAY_API_URL=http://hive-comms:8424
+      - COMMS_BEARER_TOKEN=${COMMS_BEARER_TOKEN}
       - HIVE_INIT_HOST=${HIVE_INIT_HOST:-gethivemind.sparktobloom.com}
       - HIVE_INIT_REPO_DIR=/srv/hive-init
       - STB_SECRET_KEY=${STB_SECRET_KEY:-change-this-in-production}

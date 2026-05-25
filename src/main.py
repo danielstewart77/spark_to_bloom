@@ -50,7 +50,14 @@ HIVE_INIT_ALLOWED_FILES = {
 
 
 def _gateway_base_url() -> str:
-    return os.getenv("GATEWAY_API_URL") or os.getenv("GRAPH_API_URL") or "http://server:8420"
+    return os.getenv("GATEWAY_API_URL") or os.getenv("GRAPH_API_URL") or "http://hive-comms:8424"
+
+
+def _gateway_headers() -> dict:
+    token = os.getenv("COMMS_BEARER_TOKEN", "")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
 
 
 def _request_host(request: Request) -> str:
@@ -183,7 +190,8 @@ def _login_redirect_for(request: Request) -> RedirectResponse:
 def _gateway_json_sync(path: str, params: dict | None = None) -> dict | list:
     query = f"?{urllib.parse.urlencode(params)}" if params else ""
     url = f"{_gateway_base_url().rstrip('/')}{path}{query}"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    headers = {"Accept": "application/json", **_gateway_headers()}
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -201,7 +209,8 @@ def _proxy_session_events(session_id: str):
     url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}/events"
 
     try:
-        request = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+        headers = {"Accept": "text/event-stream", **_gateway_headers()}
+        request = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(request) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
@@ -408,7 +417,7 @@ async def _drain_gateway_message(session_id: str, text: str) -> None:
         data = json.dumps({"content": text}).encode()
         req = urllib.request.Request(
             url, data=data,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **_gateway_headers()},
         )
         try:
             with urllib.request.urlopen(req, timeout=300) as resp:
