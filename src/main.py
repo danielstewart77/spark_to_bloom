@@ -489,6 +489,43 @@ async def api_terminal_selector(user: dict = Depends(require_auth)):
     return _build_terminal_selector(minds, all_sessions)
 
 
+def _voice_api_url() -> str:
+    return os.environ.get("VOICE_API_URL", "http://hive-mind-voice:8422").rstrip("/")
+
+
+@app.post("/api/terminal/tts")
+async def api_terminal_tts(request: Request, user: dict = Depends(require_auth)):
+    """Proxy text to the voice server's /tts endpoint and pipe back OGG audio.
+
+    Only called when the user has the speaker toggle on, so the GPU isn't
+    loaded for silent turns.
+    """
+    del user
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    voice_id = (body.get("voice_id") or "default").strip() or "default"
+    payload = json.dumps({"text": text, "voice_id": voice_id}).encode()
+    url = f"{_voice_api_url()}/tts"
+
+    def _do_post():
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.read(), resp.headers.get("content-type", "audio/ogg")
+
+    try:
+        audio, ctype = await asyncio.to_thread(_do_post)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail="voice server rejected request") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=502, detail=f"voice server unavailable: {exc}") from exc
+    return Response(content=audio, media_type=ctype)
+
+
 @app.get("/api/terminal/active")
 async def api_terminal_active(
     mind_id: str,

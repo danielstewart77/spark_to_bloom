@@ -206,6 +206,61 @@ def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypat
     assert "do the thing" in body
 
 
+def test_api_terminal_tts_proxies_to_voice_server(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("VOICE_API_URL", "http://hive-mind-voice:8422")
+
+    captured = {}
+
+    class _FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b"OGGDATA"
+        def getheader(self, name, default=None):
+            return "audio/ogg" if name.lower() == "content-type" else default
+        headers = {"content-type": "audio/ogg"}
+
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["body"] = req.data
+        return _FakeResp()
+
+    with patch("main.urllib.request.urlopen", side_effect=_fake_urlopen):
+        response = client.post(
+            "/api/terminal/tts",
+            json={"text": "hello world", "voice_id": "abc-123"},
+        )
+
+    assert response.status_code == 200
+    assert response.content == b"OGGDATA"
+    assert "/tts" in captured["url"]
+    sent = json.loads(captured["body"].decode())
+    assert sent["text"] == "hello world"
+    assert sent["voice_id"] == "abc-123"
+
+
+def test_api_terminal_tts_requires_text(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    response = client.post("/api/terminal/tts", json={"voice_id": "x"})
+    assert response.status_code == 400
+
+
+def test_terminal_page_has_speaker_toggle(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="term-speaker-btn"' in body
+    assert "/api/terminal/tts" in body
+
+
 def test_terminal_input_is_growable_textarea(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 

@@ -12,6 +12,7 @@ services:
       - HIVE_INIT_REPO_DIR=/srv/hive-init
       - STB_SECRET_KEY=${STB_SECRET_KEY:-change-this-in-production}
       - STB_DB_PATH=/data/stb.db
+      - VOICE_API_URL=${VOICE_API_URL:-http://hive-mind-voice:8422}
     ports:
       - "5000:5000"
     volumes:

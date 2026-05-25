@@ -991,3 +991,8 @@ nav ul li.user-controls {
     color: #c94c4c;
     text-shadow: 0 0 6px rgba(201, 76, 76, 0.6);
 }
+
+.term-action-btn.term-speaker-on {
+    color: #4ee8fc;
+    text-shadow: 0 0 6px rgba(78, 232, 252, 0.5);
+}

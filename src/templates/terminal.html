@@ -25,6 +25,7 @@
             </select>
             <span id="term-session-info" class="term-session-info">no session</span>
             <button id="term-new-session" class="term-action-btn" type="button">new session</button>
+            <button id="term-speaker-btn" class="term-action-btn" type="button" title="toggle Skippy voice playback" aria-pressed="false">speaker off</button>
             <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
         </div>
         <div id="term-feed" class="term-feed" aria-live="polite"></div>
@@ -100,9 +101,12 @@
                 startAssistantLine(mindName);
             }
             appendAssistantChunk(chunk);
+            ttsAccumulate(chunk);
+            scheduleTtsFlush();
         } else if (event.type === "user") {
             const text = extractText(event);
             if (text) appendLine("term-user", "> " + text);
+            flushTtsNow();
         } else if (event.type === "session_closed") {
             currentAssistantEl = null;
             sessionWasClosed = true;
@@ -344,6 +348,88 @@
             appendLine("term-system", "send error: " + err.message);
         }
     });
+
+    // --- Voice output (Skippy TTS) ---
+    const speakerBtn = document.getElementById("term-speaker-btn");
+    const audioEl = new Audio();
+    audioEl.preload = "auto";
+    let speakerOn = false;
+    let ttsBuffer = "";
+    let ttsFlushTimer = null;
+    let ttsPlaying = false;
+    const ttsQueue = [];
+
+    function loadSpeakerPref() {
+        try { return localStorage.getItem("term-speaker") === "on"; }
+        catch(e) { return false; }
+    }
+    function saveSpeakerPref(on) {
+        try { localStorage.setItem("term-speaker", on ? "on" : "off"); }
+        catch(e) {}
+    }
+    function setSpeakerLabel() {
+        if (!speakerBtn) return;
+        speakerBtn.textContent = speakerOn ? "speaker on" : "speaker off";
+        speakerBtn.setAttribute("aria-pressed", speakerOn ? "true" : "false");
+        speakerBtn.classList.toggle("term-speaker-on", speakerOn);
+    }
+    function ttsAccumulate(chunk) {
+        if (!speakerOn) return;
+        ttsBuffer += chunk;
+    }
+    function scheduleTtsFlush() {
+        if (!speakerOn) return;
+        if (ttsFlushTimer) clearTimeout(ttsFlushTimer);
+        ttsFlushTimer = setTimeout(flushTtsNow, 1500);
+    }
+    async function flushTtsNow() {
+        if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+        const text = ttsBuffer.trim();
+        ttsBuffer = "";
+        if (!speakerOn || !text) return;
+        const voiceId = currentMindName || "default";
+        try {
+            const resp = await fetch("/api/terminal/tts", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text: text, voice_id: voiceId}),
+            });
+            if (!resp.ok) return;
+            const blob = await resp.blob();
+            ttsQueue.push(URL.createObjectURL(blob));
+            playNextTtsClip();
+        } catch(err) { /* swallow */ }
+    }
+    function playNextTtsClip() {
+        if (ttsPlaying) return;
+        const url = ttsQueue.shift();
+        if (!url) return;
+        ttsPlaying = true;
+        audioEl.src = url;
+        audioEl.play().catch(function() { ttsPlaying = false; URL.revokeObjectURL(url); });
+        audioEl.onended = function() {
+            URL.revokeObjectURL(url);
+            ttsPlaying = false;
+            playNextTtsClip();
+        };
+    }
+    if (speakerBtn) {
+        speakerOn = loadSpeakerPref();
+        setSpeakerLabel();
+        speakerBtn.addEventListener("click", function() {
+            speakerOn = !speakerOn;
+            saveSpeakerPref(speakerOn);
+            setSpeakerLabel();
+            if (!speakerOn) {
+                ttsBuffer = "";
+                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+                ttsQueue.length = 0;
+                try { audioEl.pause(); audioEl.src = ""; } catch(e) {}
+                ttsPlaying = false;
+            }
+        });
+    }
 
     // --- Voice input (Web Speech API) ---
     const micBtn = document.getElementById("term-mic-btn");
