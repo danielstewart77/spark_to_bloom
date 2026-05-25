@@ -2,6 +2,8 @@ import asyncio
 import json
 import markdown
 import os
+import re
+import sqlite3
 import time
 import urllib.error
 import urllib.parse
@@ -621,6 +623,94 @@ async def _create_gateway_session(mind_id: str) -> dict:
 async def api_minds(user: dict = Depends(require_auth)):
     del user
     return await _gateway_json("/broker/minds")
+
+
+_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_MEMORY_ROW_LIMIT_DEFAULT = 200
+_MEMORY_ROW_LIMIT_MAX = 1000
+
+
+def _lucent_db_path() -> str:
+    return os.getenv("LUCENT_DB_PATH", "/data/lucent.db")
+
+
+def _open_lucent_readonly() -> sqlite3.Connection:
+    path = _lucent_db_path()
+    if not os.path.exists(path):
+        raise HTTPException(status_code=503, detail="lucent database not mounted")
+    uri = f"file:{path}?mode=ro&immutable=0"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _list_lucent_tables(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).fetchall()
+    return [r["name"] for r in rows]
+
+
+@app.get("/memory", response_class=HTMLResponse)
+async def memory_page(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    return _render_template(request, "memory.html")
+
+
+@app.get("/api/memory/tables")
+async def api_memory_tables(user: dict = Depends(require_auth)):
+    del user
+    conn = _open_lucent_readonly()
+    try:
+        tables = _list_lucent_tables(conn)
+        results = []
+        for name in tables:
+            count_row = conn.execute(f'SELECT COUNT(*) AS c FROM "{name}"').fetchone()
+            results.append({"name": name, "row_count": int(count_row["c"])})
+    finally:
+        conn.close()
+    return {"tables": results}
+
+
+@app.get("/api/memory/rows")
+async def api_memory_rows(
+    table: str,
+    limit: int = _MEMORY_ROW_LIMIT_DEFAULT,
+    offset: int = 0,
+    user: dict = Depends(require_auth),
+):
+    del user
+    if not _TABLE_NAME_RE.match(table):
+        raise HTTPException(status_code=404, detail="table not found")
+    safe_limit = max(1, min(int(limit), _MEMORY_ROW_LIMIT_MAX))
+    safe_offset = max(0, int(offset))
+    conn = _open_lucent_readonly()
+    try:
+        if table not in _list_lucent_tables(conn):
+            raise HTTPException(status_code=404, detail="table not found")
+        columns = [
+            r["name"]
+            for r in conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+        ]
+        total = int(conn.execute(f'SELECT COUNT(*) AS c FROM "{table}"').fetchone()["c"])
+        rows = [
+            {col: row[col] for col in columns}
+            for row in conn.execute(
+                f'SELECT * FROM "{table}" LIMIT ? OFFSET ?',
+                (safe_limit, safe_offset),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+    return {
+        "table": table,
+        "columns": columns,
+        "rows": rows,
+        "total": total,
+        "limit": safe_limit,
+        "offset": safe_offset,
+    }
 
 
 @app.get("/api/console/sessions")
