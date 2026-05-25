@@ -30,7 +30,7 @@
         <div id="term-feed" class="term-feed" aria-live="polite"></div>
         <form id="term-input-form" class="term-input-bar" autocomplete="off">
             <span class="term-prompt">&gt;</span>
-            <input id="term-input" class="term-input" type="text" placeholder="type a message…" aria-label="message" autofocus>
+            <textarea id="term-input" class="term-input" rows="1" placeholder="type a message…" aria-label="message" autofocus></textarea>
             <button id="term-mic-btn" type="button" class="term-send-btn" title="hold or toggle to dictate" hidden>mic</button>
             <button type="submit" class="term-send-btn">send</button>
         </form>
@@ -313,11 +313,26 @@
         refreshBtn.addEventListener("click", function() { refreshSelector(); });
     }
 
+    function autoGrowInput() {
+        input.style.height = "auto";
+        const max = Math.floor(window.innerHeight * 0.4);
+        input.style.height = Math.min(input.scrollHeight, max) + "px";
+    }
+    input.addEventListener("input", autoGrowInput);
+    input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            form.requestSubmit();
+        }
+    });
+    setTimeout(autoGrowInput, 0);
+
     form.addEventListener("submit", async function(e) {
         e.preventDefault();
         const text = input.value.trim();
         if (!text || !currentSessionId) return;
         input.value = "";
+        autoGrowInput();
         currentAssistantEl = null;
         try {
             await fetch("/api/console/" + currentSessionId + "/message", {

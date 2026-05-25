@@ -932,11 +932,12 @@ nav ul li.user-controls {
 
 .term-input-bar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     border-top: 1px solid #1e2d3d;
     background: #080f18;
     flex-shrink: 0;
-    padding: 0 0.5rem 0 1rem;
+    padding: 0.5rem 0.5rem 0.5rem 1rem;
+    gap: 0.25rem;
 }
 
 .term-prompt {
@@ -944,18 +945,28 @@ nav ul li.user-controls {
     font-size: 0.9rem;
     margin-right: 0.5rem;
     flex-shrink: 0;
+    padding-top: 0.2rem;
 }
 
 .term-input {
     flex: 1;
+    min-width: 0;
     background: transparent;
     border: none;
     outline: none;
     color: #dce8f0;
     font-family: inherit;
     font-size: 0.82rem;
-    padding: 0.7rem 0;
+    padding: 0.2rem 0;
     caret-color: #c9a84c;
+    resize: none;
+    overflow-y: auto;
+    line-height: 1.4;
+    min-height: 1.4em;
+    max-height: 40vh;
+    width: 100%;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .term-input::placeholder {
