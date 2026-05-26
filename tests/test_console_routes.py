@@ -113,12 +113,14 @@ def test_build_terminal_selector_groups_active_sessions_per_mind():
     assert len(out) == 2
     ada = out[0]
     assert ada["name"] == "ada"
-    assert [s["id"] for s in ada["sessions"]] == ["sess-1", "sess-3"]
+    # All statuses are now shown (closed is no longer filtered out); sorted by last_active desc
+    assert [s["id"] for s in ada["sessions"]] == ["sess-1", "sess-2", "sess-3"]
     assert ada["sessions"][0]["short_id"] == "sess-1"[:8]
     assert ada["sessions"][0]["age"].endswith("ago")
     bilby = out[1]
     assert bilby["name"] == "bilby"
-    assert bilby["sessions"] == []
+    # sess-4 is now included (no time cutoff)
+    assert [s["id"] for s in bilby["sessions"]] == ["sess-4"]
 
 
 def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypatch):

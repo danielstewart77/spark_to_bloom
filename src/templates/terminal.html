@@ -25,6 +25,7 @@
             </select>
             <span id="term-session-info" class="term-session-info">no session</span>
             <button id="term-new-session" class="term-action-btn" type="button">new session</button>
+            <button id="term-delete-session" class="term-action-btn term-action-btn-danger" type="button" title="delete selected session" hidden>delete</button>
             <button id="term-speaker-btn" class="term-action-btn" type="button" title="toggle Skippy voice playback" aria-pressed="false">speaker off</button>
             <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
         </div>
@@ -46,6 +47,7 @@
     const mindSelect = document.getElementById("mind-select");
     const sessionInfo = document.getElementById("term-session-info");
     const newSessionBtn = document.getElementById("term-new-session");
+    const deleteSessionBtn = document.getElementById("term-delete-session");
     const refreshBtn = document.getElementById("term-refresh");
 
     let currentSessionId = null;
@@ -63,15 +65,32 @@
     let assistantDoneTimer = null;
     const ASSISTANT_IDLE_MS = 1500;
 
+    async function flushQueuedMessage() {
+        if (!pendingUserText || !currentSessionId) return;
+        const textToSend = pendingUserText;
+        const elToSend = pendingUserEl;
+        pendingUserEl = null; pendingUserText = null;
+        if (pendingPill) { pendingPill.remove(); pendingPill = null; }
+        if (elToSend) elToSend.classList.remove("term-pending");
+        try {
+            await fetch("/api/console/" + currentSessionId + "/message", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text: textToSend}),
+            });
+        } catch(err) {
+            appendLine("term-system", "send error: " + err.message);
+        }
+    }
+
     function scheduleAssistantDone() {
         if (assistantDoneTimer) clearTimeout(assistantDoneTimer);
         assistantDoneTimer = setTimeout(function() {
             assistantDoneTimer = null;
             inFlight = false;
             currentAssistantEl = null;
-            if (pendingPill) {
-                pendingPill.textContent = "send";
-            }
+            flushQueuedMessage();
         }, ASSISTANT_IDLE_MS);
     }
 
@@ -157,6 +176,12 @@
                 appendLine("term-user", "> " + text);
             }
             flushTtsNow();
+        } else if (event.type === "result") {
+            cancelAssistantDone();
+            inFlight = false;
+            currentAssistantEl = null;
+            flushTtsNow();
+            flushQueuedMessage();
         } else if (event.type === "session_closed") {
             cancelAssistantDone();
             currentAssistantEl = null;
@@ -392,8 +417,16 @@
         }
     }
 
+    function updateDeleteBtn() {
+        const opt = selectedOption();
+        if (deleteSessionBtn) {
+            deleteSessionBtn.hidden = !(opt && opt.dataset.action === "load" && opt.dataset.sessionId);
+        }
+    }
+
     mindSelect.addEventListener("change", function() {
         const opt = selectedOption();
+        updateDeleteBtn();
         if (!opt) return;
         if (opt.dataset.action === "new") {
             createSession(opt.dataset.mindId);
@@ -401,6 +434,43 @@
             attachSessionFromOption(opt);
         }
     });
+
+    if (deleteSessionBtn) {
+        deleteSessionBtn.addEventListener("click", async function() {
+            const opt = selectedOption();
+            if (!opt || !opt.dataset.sessionId) return;
+            const sessionId = opt.dataset.sessionId;
+            if (!confirm("Delete this session? This cannot be undone.")) return;
+            deleteSessionBtn.disabled = true;
+            deleteSessionBtn.textContent = "deleting…";
+            try {
+                const resp = await fetch("/api/terminal/session/" + sessionId, {
+                    method: "DELETE",
+                    credentials: "same-origin",
+                });
+                if (!resp.ok) {
+                    let msg = "HTTP " + resp.status;
+                    try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch {}
+                    appendLine("term-system", "delete failed: " + msg);
+                } else {
+                    if (currentSessionId === sessionId) {
+                        disconnectStream();
+                        cancelReattachLoop();
+                        currentSessionId = null;
+                        feed.innerHTML = "";
+                        sessionInfo.textContent = "no session";
+                    }
+                    await refreshSelector();
+                    updateDeleteBtn();
+                }
+            } catch(err) {
+                appendLine("term-system", "delete error: " + err.message);
+            } finally {
+                deleteSessionBtn.disabled = false;
+                deleteSessionBtn.textContent = "delete";
+            }
+        });
+    }
 
     newSessionBtn.addEventListener("click", function() {
         createSession(selectedMindId());
