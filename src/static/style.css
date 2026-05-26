@@ -886,6 +886,17 @@ nav ul li.user-controls {
     border-color: #c9a84c;
 }
 
+.term-action-btn-danger {
+    color: #e05c5c;
+    border-color: #e05c5c44;
+}
+
+.term-action-btn-danger:hover {
+    color: #061018;
+    background: #e05c5c;
+    border-color: #e05c5c;
+}
+
 .term-user.term-pending {
     opacity: 0.55;
 }

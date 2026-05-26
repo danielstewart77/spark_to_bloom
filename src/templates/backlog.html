@@ -1,10 +1,191 @@
 {% extends "layout.html" %}
 {% block content %}
-<h2 class="thoughts-title">Pull Requests</h2>
-<div class="terminal-box">
-    <ul class="article-list">
-        <!-- once backlog get a littl more complex we can use this menu page -->
-        <!-- <li><a href="/pr/orchestration.md">hive_mind: why orchestration is the way i'm going </a> <span class="new-tag">(new)</span></li> -->
-    </ul>
+<style>
+  .canvas-layout {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  /* ── Sidebar ── */
+  .canvas-sidebar {
+    width: 220px;
+    min-width: 220px;
+    border-right: 1px solid #c9a84c22;
+    background: #090912;
+    transition: width 0.2s ease, min-width 0.2s ease;
+    position: sticky;
+    top: var(--nav-h);
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .canvas-sidebar.collapsed {
+    width: 30px;
+    min-width: 30px;
+  }
+
+  .sidebar-toggle {
+    position: absolute;
+    top: 1.1rem;
+    right: -12px;
+    width: 20px;
+    height: 28px;
+    background: #0f0f1f;
+    border: 1px solid #c9a84c33;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #c9a84c77;
+    z-index: 10;
+    padding: 0;
+    line-height: 1;
+  }
+  .sidebar-toggle:hover {
+    color: #c9a84c;
+    background: #141428;
+  }
+
+  .sidebar-inner {
+    padding: 1rem 0.75rem 1rem 0.75rem;
+    max-height: calc(100vh - var(--nav-h));
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+  .canvas-sidebar.collapsed .sidebar-inner {
+    display: none;
+  }
+
+  .sidebar-title {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #c9a84caa;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #c9a84c33;
+    margin-bottom: 0.5rem;
+  }
+
+  .sidebar-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .sidebar-list li {
+    margin: 0;
+  }
+  .sidebar-list a {
+    display: block;
+    padding: 0.28rem 0.4rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.71rem;
+    color: #c9a84c;
+    text-decoration: none;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 0.12s, background 0.12s;
+    border-left: 2px solid transparent;
+  }
+  .sidebar-list a:hover {
+    color: #f1d78a;
+    background: #c9a84c0d;
+  }
+  .sidebar-list a.active {
+    color: #f6e3aa;
+    background: #c9a84c1f;
+    border-left: 2px solid #f1d78a;
+  }
+
+  /* ── Main area ── */
+  .canvas-main {
+    flex: 1;
+    min-width: 0;
+    padding: 0 1.5rem;
+  }
+
+  /* ── Content ── */
+  .canvas-content {
+    font-family: 'Fira Code', 'Consolas', monospace;
+  }
+  .canvas-content .mermaid {
+    margin: 1.5rem 0;
+  }
+</style>
+
+<div class="canvas-layout">
+
+  <aside class="canvas-sidebar" id="canvas-sidebar">
+    <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle backlog">&#x25C4;</button>
+    <div class="sidebar-inner">
+      <div class="sidebar-title">backlog</div>
+      <ul class="sidebar-list">
+        {% for item in backlog_items %}
+        <li>
+          <a href="/backlog?doc={{ item.slug }}"
+             class="{% if item.slug == active_doc %}active{% endif %}"
+             title="{{ item.label }}">{{ item.label }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </aside>
+
+  <div class="canvas-main">
+    <main>
+      <article class="article-container canvas-content">
+        {% if content %}
+        {{ content|safe }}
+        {% else %}
+        <p style="color:#c9a84c66;font-family:'Fira Code',monospace;font-size:0.85rem;">select a document from the sidebar.</p>
+        {% endif %}
+      </article>
+    </main>
+  </div>
+
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  (function () {
+    var sidebar = document.getElementById('canvas-sidebar');
+    var btn = document.getElementById('sidebar-toggle');
+    var KEY = 'canvas-sidebar-collapsed';
+
+    function setCollapsed(c) {
+      if (c) {
+        sidebar.classList.add('collapsed');
+        btn.innerHTML = '&#x25BA;';
+      } else {
+        sidebar.classList.remove('collapsed');
+        btn.innerHTML = '&#x25C4;';
+      }
+      try { sessionStorage.setItem(KEY, c ? '1' : '0'); } catch(e) {}
+    }
+
+    try {
+      if (sessionStorage.getItem(KEY) === '1') setCollapsed(true);
+    } catch(e) {}
+
+    btn.addEventListener('click', function () {
+      setCollapsed(!sidebar.classList.contains('collapsed'));
+    });
+  })();
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('code.language-mermaid').forEach(function (el) {
+      var pre = el.parentElement;
+      var div = document.createElement('div');
+      div.className = 'mermaid';
+      div.textContent = el.textContent;
+      pre.replaceWith(div);
+    });
+    mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+    mermaid.run();
+  });
+</script>
 {% endblock %}

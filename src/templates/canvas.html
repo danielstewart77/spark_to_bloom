@@ -1,306 +1,627 @@
 {% extends "layout.html" %}
 {% block content %}
 <style>
-  .canvas-layout {
+  /* Full-bleed canvas page */
+  .content-wrapper { padding: 0 !important; }
+  .content-wrapper > .terminal-box,
+  .content-wrapper > footer { display: none; }
+
+  /* Draw container fills viewport below nav */
+  .draw-container {
     display: flex;
-    align-items: flex-start;
-  }
-
-  /* ── Sidebar ── */
-  .canvas-sidebar {
-    width: 220px;
-    min-width: 220px;
-    border-right: 1px solid #c9a84c22;
+    flex-direction: column;
+    height: calc(100vh - var(--nav-h));
+    overflow: hidden;
     background: #090912;
-    transition: width 0.2s ease, min-width 0.2s ease;
-    position: sticky;
-    top: var(--nav-h);
-    flex-shrink: 0;
-    align-self: flex-start;
-  }
-  .canvas-sidebar.collapsed {
-    width: 30px;
-    min-width: 30px;
+    user-select: none;
   }
 
-  .sidebar-toggle {
-    position: absolute;
-    top: 1.1rem;
-    right: -12px;
-    width: 20px;
-    height: 28px;
-    background: #0f0f1f;
-    border: 1px solid #c9a84c33;
-    border-radius: 0 4px 4px 0;
-    cursor: pointer;
+  /* Toolbar */
+  .draw-toolbar {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 9px;
+    gap: 0.45rem;
+    padding: 0 0.85rem;
+    height: 40px;
+    border-bottom: 1px solid #c9a84c22;
+    background: #0a0a16;
+    flex-shrink: 0;
+  }
+
+  .draw-tool {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.72rem;
+    padding: 0.18rem 0.55rem;
+    background: transparent;
+    border: 1px solid #c9a84c33;
     color: #c9a84c77;
-    z-index: 10;
-    padding: 0;
-    line-height: 1;
-  }
-  .sidebar-toggle:hover {
-    color: #c9a84c;
-    background: #141428;
-  }
-
-  .sidebar-inner {
-    padding: 1rem 0.75rem 1rem 0.75rem;
-    max-height: calc(100vh - var(--nav-h));
-    overflow-y: auto;
-    overflow-x: hidden;
-    box-sizing: border-box;
-  }
-  .canvas-sidebar.collapsed .sidebar-inner {
-    display: none;
-  }
-
-  .sidebar-title {
-    font-family: 'Fira Code', monospace;
-    font-size: 0.78rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #c9a84caa;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #c9a84c33;
-    margin-bottom: 0.5rem;
-  }
-
-  .sidebar-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .sidebar-list li {
-    margin: 0;
-  }
-  .sidebar-list a {
-    display: block;
-    padding: 0.28rem 0.4rem;
-    font-family: 'Fira Code', monospace;
-    font-size: 0.71rem;
-    color: #c9a84c;
-    text-decoration: none;
     border-radius: 3px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: color 0.12s, background 0.12s;
-    border-left: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
+    line-height: 1.6;
   }
-  .sidebar-list a:hover {
-    color: #f1d78a;
+  .draw-tool:hover {
+    color: #c9a84c;
+    border-color: #c9a84c66;
     background: #c9a84c0d;
   }
-  .sidebar-list a.active {
-    color: #f6e3aa;
+  .draw-tool.active {
+    color: #f1d78a;
+    border-color: #c9a84c;
     background: #c9a84c1f;
-    border-left: 2px solid #f1d78a;
   }
 
-  /* ── Main area ── */
-  .canvas-main {
+  .draw-spacer { flex: 1; }
+
+  .draw-btn-clear {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.72rem;
+    padding: 0.18rem 0.55rem;
+    background: transparent;
+    border: 1px solid #7a1a1a44;
+    color: #c0404066;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
+    line-height: 1.6;
+  }
+  .draw-btn-clear:hover {
+    color: #c04040;
+    border-color: #7a1a1a;
+    background: #7a1a1a11;
+  }
+
+  .draw-conn-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #333;
+    margin-left: 0.2rem;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .draw-conn-dot.connected { background: #22c55e; }
+  .draw-conn-dot.readonly  { background: #38bdf8; }
+
+  /* Canvas surface */
+  .draw-surface {
     flex: 1;
-    min-width: 0;
-    padding: 0 1.5rem;
-  }
-
-  /* ── Banner ── */
-  .canvas-banner {
-    display: block;
-    width: 100%;
-    margin: 1.5rem 0 0.5rem;
-    border-radius: 10px;
+    position: relative;
     overflow: hidden;
-    background: #090912;
-    line-height: 0;
-    max-height: 160px;
+    cursor: crosshair;
+    touch-action: none;
   }
-  .canvas-banner svg {
+  .draw-surface.tool-select { cursor: default; }
+  .draw-surface.tool-text   { cursor: text; }
+
+  #draw-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     display: block;
-    width: 100%;
-    height: auto;
-    max-height: 160px;
   }
 
-  /* ── Content ── */
-  .canvas-content {
-    font-family: 'Fira Code', 'Consolas', monospace;
+  /* Floating text input when placing a text box */
+  .canvas-textbox-input {
+    position: absolute;
+    font-family: 'Fira Code', monospace;
+    font-size: 14px;
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed;
+    outline: none;
+    padding: 0 2px;
+    min-width: 100px;
+    white-space: pre;
+    z-index: 10;
+    line-height: 1.4;
   }
-  .canvas-content .mermaid {
-    margin: 1.5rem 0;
+
+  /* Selection ring drawn as SVG rect */
+  #selection-rect {
+    fill: none;
+    stroke: #c9a84c;
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+    display: none;
   }
 </style>
 
-<div class="canvas-layout">
-
-  <aside class="canvas-sidebar" id="canvas-sidebar">
-    <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle backlog">&#x25C4;</button>
-    <div class="sidebar-inner">
-      <div class="sidebar-title">backlog</div>
-      <ul class="sidebar-list">
-        {% for item in backlog_items %}
-        <li>
-          <a href="/canvas?doc={{ item.slug }}"
-             class="{% if item.slug == active_doc %}active{% endif %}"
-             title="{{ item.label }}">{{ item.label }}</a>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-  </aside>
-
-  <div class="canvas-main">
-    <main>
-      <article class="article-container canvas-content">
-        {{ content|safe }}
-      </article>
-    </main>
-
-    <div class="canvas-banner">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">
-        <defs>
-          <linearGradient id="cbg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stop-color="#090912"/>
-            <stop offset="60%"  stop-color="#0f0f1f"/>
-            <stop offset="100%" stop-color="#141428"/>
-          </linearGradient>
-          <filter id="chex-glow">
-            <feGaussianBlur stdDeviation="4" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <filter id="ctext-glow">
-            <feGaussianBlur stdDeviation="6" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <filter id="ccursor-glow">
-            <feGaussianBlur stdDeviation="10" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-          <linearGradient id="cfade-left" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="white" stop-opacity="0"/>
-            <stop offset="35%"  stop-color="white" stop-opacity="0.5"/>
-            <stop offset="50%"  stop-color="white" stop-opacity="1"/>
-            <stop offset="100%" stop-color="white" stop-opacity="1"/>
-          </linearGradient>
-          <mask id="chex-mask">
-            <rect width="680" height="240" fill="url(#cfade-left)"/>
-          </mask>
-          <radialGradient id="cvignette" cx="65%" cy="50%" r="65%">
-            <stop offset="0%"   stop-color="#c9a84c" stop-opacity="0.04"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0.5"/>
-          </radialGradient>
-        </defs>
-
-        <rect width="680" height="240" fill="url(#cbg)"/>
-
-        <g mask="url(#chex-mask)">
-          <polygon points="520,32 563,57 563,107 520,132 477,107 477,57"
-            fill="#c9a84c" fill-opacity="0.05"
-            stroke="#c9a84c" stroke-width="1.5" stroke-opacity="0.5"
-            filter="url(#chex-glow)"/>
-          <polygon points="428,110 463,130 463,170 428,190 393,170 393,130"
-            fill="#c9a84c" fill-opacity="0.06"
-            stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.4"
-            filter="url(#chex-glow)"/>
-          <polygon points="590,128 616,143 616,173 590,188 564,173 564,143"
-            fill="#c9a84c" fill-opacity="0.04"
-            stroke="#c9a84c" stroke-width="1.2" stroke-opacity="0.45"
-            filter="url(#chex-glow)"/>
-          <polygon points="608,40 627,51 627,73 608,84 589,73 589,51"
-            fill="none"
-            stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.3"/>
-          <polygon points="480,162 504,176 504,204 480,218 456,204 456,176"
-            fill="none"
-            stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.2"
-            stroke-dasharray="4 5"/>
-          <polygon points="350,73 380,91 380,125 350,143 320,125 320,91"
-            fill="none"
-            stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25"
-            stroke-dasharray="3 6"/>
-
-          <line x1="520" y1="82"  x2="428" y2="150" stroke="#c9a84c" stroke-width="0.8" stroke-opacity="0.30" stroke-dasharray="4 6"/>
-          <line x1="520" y1="82"  x2="590" y2="158" stroke="#c9a84c" stroke-width="0.7" stroke-opacity="0.25" stroke-dasharray="3 7"/>
-          <line x1="590" y1="158" x2="608" y2="62"  stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20"/>
-          <line x1="428" y1="150" x2="480" y2="190" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="2 5"/>
-          <line x1="350" y1="108" x2="428" y2="150" stroke="#c9a84c" stroke-width="0.6" stroke-opacity="0.20" stroke-dasharray="3 6"/>
-
-          <circle cx="520" cy="82"  r="3"   fill="#c9a84c" fill-opacity="0.7"  filter="url(#chex-glow)"/>
-          <circle cx="590" cy="158" r="2.5" fill="#c9a84c" fill-opacity="0.6"/>
-          <circle cx="608" cy="62"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
-          <circle cx="520" cy="32"  r="2"   fill="#c9a84c" fill-opacity="0.5"/>
-          <circle cx="563" cy="57"  r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
-          <circle cx="563" cy="107" r="1.5" fill="#c9a84c" fill-opacity="0.4"/>
-          <circle cx="428" cy="150" r="5" fill="#c9a84c" fill-opacity="0.92" filter="url(#ccursor-glow)"/>
-          <line x1="418" y1="160" x2="428" y2="150" stroke="#c9a84c" stroke-width="2.5" stroke-opacity="0.5" stroke-linecap="round"/>
-        </g>
-
-        <rect width="680" height="240" fill="url(#cvignette)"/>
-
-        <text x="40" y="108"
-          text-anchor="start"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="42"
-          letter-spacing="10"
-          fill="#c9a84c"
-          fill-opacity="0.90"
-          filter="url(#ctext-glow)">CANVAS</text>
-
-        <text x="40" y="136"
-          text-anchor="start"
-          font-family="Georgia, 'Times New Roman', serif"
-          font-size="13"
-          letter-spacing="4"
-          fill="#c9a84c"
-          fill-opacity="0.45">ADA'S WORKSPACE</text>
-
-        <line x1="30" y1="145" x2="290" y2="145" stroke="#c9a84c" stroke-width="0.5" stroke-opacity="0.3"/>
-      </svg>
-    </div>
+<div class="draw-container" id="draw-container">
+  <div class="draw-toolbar">
+    <button class="draw-tool active" data-tool="pen" title="Pen — freehand draw">&#9998; pen</button>
+    <button class="draw-tool" data-tool="text" title="Text — click to place">T text</button>
+    <button class="draw-tool" data-tool="select" title="Select — click to pick, Delete to remove, drag to move">&#8598; select</button>
+    <button class="draw-tool" data-tool="attach" title="Attach an image file">&#8853; attach</button>
+    <input type="file" id="file-input" style="display:none" accept="image/*">
+    <span class="draw-spacer"></span>
+    <button class="draw-btn-clear" id="draw-clear">clear</button>
+    <span class="draw-conn-dot" id="draw-conn" title="disconnected"></span>
   </div>
 
+  <div class="draw-surface" id="draw-surface">
+    <svg id="draw-svg" xmlns="http://www.w3.org/2000/svg">
+      <g id="draw-elements"></g>
+      <rect id="selection-rect" x="0" y="0" width="0" height="0"/>
+      <g id="draw-live"></g>
+    </svg>
+  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
-  (function () {
-    var sidebar = document.getElementById('canvas-sidebar');
-    var btn = document.getElementById('sidebar-toggle');
-    var KEY = 'canvas-sidebar-collapsed';
+(function () {
+  'use strict';
 
-    function setCollapsed(c) {
-      if (c) {
-        sidebar.classList.add('collapsed');
-        btn.innerHTML = '&#x25BA;';
-      } else {
-        sidebar.classList.remove('collapsed');
-        btn.innerHTML = '&#x25C4;';
+  // ── Identity ──────────────────────────────────────────────────────────────
+  const CAN_DRAW = {{ "true" if current_user else "false" }};
+  const MY_COLOR = CAN_DRAW ? '#c9a84c' : '#2dd4bf';
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const surface    = document.getElementById('draw-surface');
+  const svg        = document.getElementById('draw-svg');
+  const elGroup    = document.getElementById('draw-elements');
+  const liveGroup  = document.getElementById('draw-live');
+  const selRect    = document.getElementById('selection-rect');
+  const connDot    = document.getElementById('draw-conn');
+  const fileInput  = document.getElementById('file-input');
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let tool       = 'pen';
+  let ws         = null;
+  let wsReady    = false;
+  let elementMap = new Map(); // id → { svgEl, data }
+  let selectedId = null;
+
+  // Pen state
+  let drawing    = false;
+  let livePath   = null;
+  let livePoints = [];
+  let livePid    = null;
+
+  // Drag-to-move state (select tool)
+  let dragId         = null;
+  let dragStartX     = 0, dragStartY = 0;
+  let dragElStartX   = 0, dragElStartY = 0;
+  let didDrag        = false;
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function uid() {
+    return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
+
+  function svgPt(e) {
+    const r = svg.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function touchSvgPt(e) {
+    const t = e.touches[0] || e.changedTouches[0];
+    return svgPt(t);
+  }
+
+  function smoothD(pts) {
+    if (!pts.length) return '';
+    if (pts.length === 1) return `M${pts[0].x},${pts[0].y}`;
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2;
+      const my = (pts[i].y + pts[i + 1].y) / 2;
+      d += ` Q${pts[i].x},${pts[i].y} ${mx},${my}`;
+    }
+    const l = pts[pts.length - 1];
+    d += ` L${l.x},${l.y}`;
+    return d;
+  }
+
+  // ── Tool selection ────────────────────────────────────────────────────────
+  document.querySelectorAll('.draw-tool').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const t = this.dataset.tool;
+      if (!CAN_DRAW && t !== 'select') return;
+      if (t === 'attach') {
+        fileInput.click();
+        return;
       }
-      try { sessionStorage.setItem(KEY, c ? '1' : '0'); } catch(e) {}
+      setTool(t);
+    });
+  });
+
+  function setTool(t) {
+    tool = t;
+    document.querySelectorAll('.draw-tool').forEach(b =>
+      b.classList.toggle('active', b.dataset.tool === t)
+    );
+    surface.className = 'draw-surface'
+      + (t === 'select' ? ' tool-select' : t === 'text' ? ' tool-text' : '');
+    clearSelection();
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+  function connectWs() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws/canvas`);
+
+    ws.onopen = () => {
+      wsReady = true;
+      connDot.className = 'draw-conn-dot ' + (CAN_DRAW ? 'connected' : 'readonly');
+      connDot.title = CAN_DRAW ? 'connected' : 'read-only';
+    };
+
+    ws.onclose = () => {
+      wsReady = false;
+      connDot.className = 'draw-conn-dot';
+      connDot.title = 'disconnected';
+      setTimeout(connectWs, 3000);
+    };
+
+    ws.onerror = () => ws.close();
+
+    ws.onmessage = e => handleServerMsg(JSON.parse(e.data));
+  }
+
+  function send(obj) {
+    if (wsReady && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(obj));
+    }
+  }
+
+  // ── Apply server messages ─────────────────────────────────────────────────
+  function handleServerMsg(msg) {
+    switch (msg.type) {
+      case 'state':
+        elGroup.innerHTML = '';
+        elementMap.clear();
+        clearSelection();
+        (msg.elements || []).forEach(applyElement);
+        break;
+      case 'path':  applyElement(msg); break;
+      case 'text':  applyElement(msg); break;
+      case 'image': applyElement(msg); break;
+      case 'move':  applyMove(msg); break;
+      case 'delete': applyDelete(msg.id); break;
+      case 'clear':
+        elGroup.innerHTML = '';
+        elementMap.clear();
+        clearSelection();
+        break;
+    }
+  }
+
+  function applyElement(data) {
+    if (elementMap.has(data.id)) return;
+    switch (data.type) {
+      case 'path':  addPathEl(data); break;
+      case 'text':  addTextEl(data); break;
+      case 'image': addImageEl(data); break;
+    }
+  }
+
+  // ── SVG element builders ──────────────────────────────────────────────────
+  function addPathEl(data) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    el.setAttribute('d', data.d || '');
+    el.setAttribute('stroke', data.color || '#c9a84c');
+    el.setAttribute('stroke-width', data.sw || 2);
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke-linecap', 'round');
+    el.setAttribute('stroke-linejoin', 'round');
+    el.setAttribute('data-id', data.id);
+    el.style.pointerEvents = 'stroke';
+    elGroup.appendChild(el);
+    elementMap.set(data.id, { svgEl: el, data: Object.assign({}, data) });
+    if (CAN_DRAW) el.addEventListener('click', e => { e.stopPropagation(); onElemClick(data.id); });
+  }
+
+  function addTextEl(data) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    el.setAttribute('x', data.x);
+    el.setAttribute('y', data.y);
+    el.setAttribute('fill', data.color || '#c9a84c');
+    el.setAttribute('font-family', "'Fira Code', monospace");
+    el.setAttribute('font-size', '14');
+    el.setAttribute('data-id', data.id);
+    el.style.cursor = CAN_DRAW ? 'default' : 'default';
+    el.textContent = data.content || '';
+    elGroup.appendChild(el);
+    const stored = Object.assign({}, data);
+    elementMap.set(data.id, { svgEl: el, data: stored });
+    if (CAN_DRAW) {
+      el.addEventListener('click', e => { e.stopPropagation(); onElemClick(data.id); });
+      el.addEventListener('mousedown', e => onElemMouseDown(e, data.id));
+    }
+  }
+
+  function addImageEl(data) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${data.x},${data.y})`);
+    g.setAttribute('data-id', data.id);
+
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.setAttribute('width', data.w || 200);
+    img.setAttribute('height', data.h || 150);
+    img.setAttribute('href', data.src || '');
+    img.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    g.appendChild(img);
+    elGroup.appendChild(g);
+    const stored = Object.assign({}, data);
+    elementMap.set(data.id, { svgEl: g, data: stored });
+    if (CAN_DRAW) {
+      g.addEventListener('click', e => { e.stopPropagation(); onElemClick(data.id); });
+      g.addEventListener('mousedown', e => onElemMouseDown(e, data.id));
+    }
+  }
+
+  function applyMove(msg) {
+    const entry = elementMap.get(msg.id);
+    if (!entry) return;
+    const { svgEl, data } = entry;
+    data.x = msg.x; data.y = msg.y;
+    if (data.type === 'text') {
+      svgEl.setAttribute('x', msg.x);
+      svgEl.setAttribute('y', msg.y);
+    } else if (data.type === 'image') {
+      svgEl.setAttribute('transform', `translate(${msg.x},${msg.y})`);
+    }
+    if (selectedId === msg.id) updateSelectionRect(msg.id);
+  }
+
+  function applyDelete(id) {
+    const entry = elementMap.get(id);
+    if (!entry) return;
+    entry.svgEl.remove();
+    elementMap.delete(id);
+    if (selectedId === id) clearSelection();
+  }
+
+  // ── Selection ─────────────────────────────────────────────────────────────
+  function onElemClick(id) {
+    if (tool !== 'select') return;
+    selectElement(id);
+  }
+
+  function selectElement(id) {
+    clearSelection();
+    selectedId = id;
+    updateSelectionRect(id);
+  }
+
+  function updateSelectionRect(id) {
+    const entry = elementMap.get(id);
+    if (!entry) return;
+    try {
+      const bbox = entry.svgEl.getBBox();
+      const pad = 4;
+      selRect.setAttribute('x', bbox.x - pad);
+      selRect.setAttribute('y', bbox.y - pad);
+      selRect.setAttribute('width', bbox.width + pad * 2);
+      selRect.setAttribute('height', bbox.height + pad * 2);
+      selRect.style.display = '';
+    } catch (e) {
+      selRect.style.display = 'none';
+    }
+  }
+
+  function clearSelection() {
+    selectedId = null;
+    selRect.style.display = 'none';
+  }
+
+  // ── Drag to move (select tool) ────────────────────────────────────────────
+  function onElemMouseDown(e, id) {
+    if (tool !== 'select') return;
+    e.stopPropagation();
+    selectElement(id);
+    dragId       = id;
+    dragStartX   = e.clientX;
+    dragStartY   = e.clientY;
+    didDrag      = false;
+    const { data } = elementMap.get(id);
+    dragElStartX = data.x || 0;
+    dragElStartY = data.y || 0;
+  }
+
+  svg.addEventListener('mousemove', e => {
+    if (!dragId) return;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) didDrag = true;
+    const entry = elementMap.get(dragId);
+    if (!entry) { dragId = null; return; }
+    const nx = dragElStartX + dx;
+    const ny = dragElStartY + dy;
+    const { svgEl, data } = entry;
+    if (data.type === 'text') {
+      svgEl.setAttribute('x', nx);
+      svgEl.setAttribute('y', ny);
+    } else if (data.type === 'image') {
+      svgEl.setAttribute('transform', `translate(${nx},${ny})`);
+    }
+    updateSelectionRect(dragId);
+  });
+
+  window.addEventListener('mouseup', e => {
+    if (!dragId) return;
+    if (didDrag) {
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      const entry = elementMap.get(dragId);
+      if (entry) {
+        const nx = dragElStartX + dx;
+        const ny = dragElStartY + dy;
+        entry.data.x = nx; entry.data.y = ny;
+        send({ type: 'move', id: dragId, x: nx, y: ny });
+      }
+    }
+    dragId = null;
+    didDrag = false;
+  });
+
+  // ── Delete key ────────────────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (!CAN_DRAW || !selectedId) return;
+    if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      const id = selectedId;
+      applyDelete(id);
+      send({ type: 'delete', id });
+    }
+  });
+
+  // ── Pen tool ──────────────────────────────────────────────────────────────
+  function penDown(pt) {
+    if (!CAN_DRAW) return;
+    drawing = true;
+    livePid = uid();
+    livePoints = [pt];
+    livePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    livePath.setAttribute('stroke', MY_COLOR);
+    livePath.setAttribute('stroke-width', '2');
+    livePath.setAttribute('fill', 'none');
+    livePath.setAttribute('stroke-linecap', 'round');
+    livePath.setAttribute('stroke-linejoin', 'round');
+    livePath.style.pointerEvents = 'none';
+    liveGroup.appendChild(livePath);
+  }
+
+  function penMove(pt) {
+    if (!drawing || !livePath) return;
+    livePoints.push(pt);
+    if (livePoints.length > 1) livePath.setAttribute('d', smoothD(livePoints));
+  }
+
+  function penUp() {
+    if (!drawing || !livePath) return;
+    drawing = false;
+    const d = smoothD(livePoints);
+    liveGroup.innerHTML = '';
+    if (d && livePoints.length >= 2) {
+      const data = { type: 'path', id: livePid, color: MY_COLOR, d, sw: 2 };
+      addPathEl(data);
+      send(data);
+    }
+    livePath = null; livePoints = []; livePid = null;
+  }
+
+  // ── Text tool ─────────────────────────────────────────────────────────────
+  function placeText(pt) {
+    if (!CAN_DRAW) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'canvas-textbox-input';
+    input.style.left  = pt.x + 'px';
+    input.style.top   = (pt.y - 16) + 'px';
+    input.style.color = MY_COLOR;
+    input.style.borderColor = MY_COLOR;
+    surface.appendChild(input);
+    input.focus();
+
+    let committed = false;
+    function commit() {
+      if (committed) return;
+      committed = true;
+      const text = input.value.trim();
+      input.remove();
+      if (!text) return;
+      const id = uid();
+      const data = { type: 'text', id, x: pt.x, y: pt.y, content: text, color: MY_COLOR };
+      addTextEl(data);
+      send(data);
     }
 
-    try {
-      if (sessionStorage.getItem(KEY) === '1') setCollapsed(true);
-    } catch(e) {}
-
-    btn.addEventListener('click', function () {
-      setCollapsed(!sidebar.classList.contains('collapsed'));
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { committed = true; input.remove(); }
     });
-  })();
+    input.addEventListener('blur', commit);
+  }
 
-  document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('code.language-mermaid').forEach(function (el) {
-      var pre = el.parentElement;
-      var div = document.createElement('div');
-      div.className = 'mermaid';
-      div.textContent = el.textContent;
-      pre.replaceWith(div);
-    });
-    mermaid.initialize({ startOnLoad: false, theme: 'dark' });
-    mermaid.run();
+  // ── Surface pointer events ────────────────────────────────────────────────
+  surface.addEventListener('mousedown', e => {
+    if (!CAN_DRAW && tool !== 'select') return;
+    // Clicks on an element are handled by the element's own listener
+    if (e.target !== svg && e.target !== elGroup && e.target !== liveGroup && !e.target.id.startsWith('draw')) {
+      // probably on a child element — let it bubble up to onElemMouseDown / onElemClick
+      if (tool !== 'pen') return;
+    }
+    if (tool === 'pen')   { penDown(svgPt(e)); }
+    if (tool === 'text')  { placeText(svgPt(e)); }
+    if (tool === 'select') { clearSelection(); }
   });
+
+  surface.addEventListener('mousemove', e => {
+    if (tool === 'pen') penMove(svgPt(e));
+  });
+
+  surface.addEventListener('mouseup', () => {
+    if (tool === 'pen') penUp();
+  });
+
+  surface.addEventListener('mouseleave', () => {
+    if (tool === 'pen' && drawing) penUp();
+  });
+
+  // ── Touch events ──────────────────────────────────────────────────────────
+  surface.addEventListener('touchstart', e => {
+    if (!CAN_DRAW || tool !== 'pen') return;
+    e.preventDefault();
+    penDown(touchSvgPt(e));
+  }, { passive: false });
+
+  surface.addEventListener('touchmove', e => {
+    if (tool !== 'pen') return;
+    e.preventDefault();
+    penMove(touchSvgPt(e));
+  }, { passive: false });
+
+  surface.addEventListener('touchend', e => {
+    if (tool !== 'pen') return;
+    e.preventDefault();
+    penUp();
+  }, { passive: false });
+
+  // ── File drop ─────────────────────────────────────────────────────────────
+  surface.addEventListener('dragover', e => e.preventDefault());
+
+  function handleImageFile(file, pt) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const id = uid();
+      const data = { type: 'image', id, x: pt.x - 100, y: pt.y - 75, w: 200, h: 150, src: reader.result };
+      addImageEl(data);
+      send(data);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  surface.addEventListener('drop', e => {
+    if (!CAN_DRAW) return;
+    e.preventDefault();
+    handleImageFile(e.dataTransfer.files[0], svgPt(e));
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (!CAN_DRAW) { fileInput.value = ''; return; }
+    const file = fileInput.files[0];
+    const r = svg.getBoundingClientRect();
+    handleImageFile(file, { x: r.width / 2, y: r.height / 2 });
+    fileInput.value = '';
+  });
+
+  // ── Clear button ──────────────────────────────────────────────────────────
+  document.getElementById('draw-clear').addEventListener('click', () => {
+    if (!CAN_DRAW) return;
+    if (!confirm('Clear the canvas? This cannot be undone.')) return;
+    elGroup.innerHTML = '';
+    elementMap.clear();
+    clearSelection();
+    send({ type: 'clear' });
+  });
+
+  // ── Connect ───────────────────────────────────────────────────────────────
+  connectWs();
+})();
 </script>
 {% endblock %}

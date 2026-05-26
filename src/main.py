@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -30,10 +31,39 @@ from config import BASE_DIR
 from graph_data import get_graph_data
 
 
+_canvas_connections: set[WebSocket] = set()
+_canvas_elements: list[dict] = []
+
+
+def _canvas_state_path() -> Path:
+    return BASE_DIR.parent / "data" / "canvas_state.json"
+
+
+def _load_canvas_state() -> list[dict]:
+    p = _canvas_state_path()
+    try:
+        if p.exists():
+            with open(p) as f:
+                data = json.load(f)
+            return data.get("elements", []) if isinstance(data, dict) else []
+    except Exception:
+        pass
+    return []
+
+
+def _save_canvas_state() -> None:
+    p = _canvas_state_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        json.dump({"elements": _canvas_elements}, f)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     del app
     init_auth_db()
+    global _canvas_elements
+    _canvas_elements = _load_canvas_state()
     yield
 
 
@@ -261,7 +291,11 @@ async def linkedin(request: Request):
 
 
 @app.get("/canvas", response_class=HTMLResponse)
-async def canvas(request: Request, doc: str | None = None, dir: str = "backlog"):
+async def canvas(request: Request):
+    return _render_template(request, "canvas.html")
+
+
+def _backlog_doc_context(doc: str | None, dir: str) -> dict:
     backlog_dir = BASE_DIR / "backlog"
     plans_dir = BASE_DIR / "plans"
 
@@ -293,20 +327,25 @@ async def canvas(request: Request, doc: str | None = None, dir: str = "backlog")
                 html_content = _render_markdown(resolved)
                 active_doc = doc
             else:
-                html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+                html_content = ""
         except (OSError, ValueError):
-            html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+            html_content = ""
     else:
-        html_content = _render_markdown(BASE_DIR / "templates" / "canvas.md")
+        html_content = ""
 
-    return _render_template(
-        request, "canvas.html",
-        content=html_content,
-        backlog_items=backlog_items,
-        plans_items=plans_items,
-        active_doc=active_doc,
-        active_dir=active_dir,
-    )
+    return {
+        "content": html_content,
+        "backlog_items": backlog_items,
+        "plans_items": plans_items,
+        "active_doc": active_doc,
+        "active_dir": active_dir,
+    }
+
+
+@app.get("/backlog", response_class=HTMLResponse)
+async def backlog_docs(request: Request, doc: str | None = None, dir: str = "backlog"):
+    ctx = _backlog_doc_context(doc, dir)
+    return _render_template(request, "backlog.html", **ctx)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -400,14 +439,11 @@ async def terminal(request: Request):
 
 def _build_terminal_selector(minds: list[dict], sessions: list[dict]) -> list[dict]:
     now = int(time.time())
-    cutoff = now - 86400
     by_mind: dict[str, list[dict]] = {}
     for session in sessions:
         if not isinstance(session, dict):
             continue
-        if session.get("status") not in ("running", "idle"):
-            continue
-        if int(session.get("last_active", 0)) < cutoff:
+        if session.get("owner_type") == "scheduler":
             continue
         mind_id = session.get("mind_id") or ""
         if not mind_id:
@@ -418,7 +454,8 @@ def _build_terminal_selector(minds: list[dict], sessions: list[dict]) -> list[di
         mind_id = mind.get("id") or ""
         mind_name = mind.get("name") or "mind"
         mind_sessions = by_mind.get(mind_id, [])
-        mind_sessions.sort(key=lambda s: -float(s.get("last_active", 0)))
+        mind_sessions.sort(key=lambda s: -float(s.get("last_active", 0) or 0))
+        mind_sessions = mind_sessions[:30]
         enriched.append({
             "id": mind_id,
             "name": mind_name,
@@ -699,6 +736,15 @@ async def api_memory_rows(
     }
 
 
+@app.get("/api/terminal/session/{session_id}/history")
+async def api_terminal_session_history(session_id: str, user: dict = Depends(require_auth)):
+    del user
+    data = await _gateway_json(f"/sessions/{session_id}/history")
+    if data is None:
+        return {"session_id": session_id, "messages": []}
+    return data
+
+
 @app.get("/api/console/{session_id}/stream")
 async def api_console_stream(session_id: str, user: dict = Depends(require_auth)):
     del user
@@ -742,6 +788,24 @@ async def api_console_send_message(
     return {"status": "sent"}
 
 
+@app.delete("/api/terminal/session/{session_id}")
+async def api_terminal_session_delete(session_id: str, user: dict = Depends(require_auth)):
+    del user
+
+    def _do_delete():
+        url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}"
+        req = urllib.request.Request(url, headers=_gateway_headers(), method="DELETE")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    try:
+        return await asyncio.to_thread(_do_delete)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail="Gateway delete failed") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
+
+
 @app.post("/api/console/{session_id}/interrupt")
 async def api_console_interrupt(session_id: str, user: dict = Depends(require_auth)):
     del user
@@ -761,6 +825,59 @@ async def api_console_interrupt(session_id: str, user: dict = Depends(require_au
         raise HTTPException(status_code=exc.code, detail="Gateway interrupt failed") from exc
     except OSError as exc:
         raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
+
+
+@app.websocket("/ws/canvas")
+async def ws_canvas(websocket: WebSocket):
+    user = get_current_user_from_request(websocket)
+    can_draw = user is not None
+    await websocket.accept()
+    _canvas_connections.add(websocket)
+    try:
+        await websocket.send_json({"type": "state", "elements": _canvas_elements})
+        while True:
+            data = await websocket.receive_json()
+            if not can_draw:
+                continue
+            msg_type = data.get("type")
+            if msg_type == "clear":
+                _canvas_elements.clear()
+                _save_canvas_state()
+            elif msg_type == "path":
+                data.setdefault("id", str(uuid.uuid4()))
+                _canvas_elements.append({k: data[k] for k in ("type", "id", "color", "d", "sw") if k in data})
+                _save_canvas_state()
+            elif msg_type == "text":
+                data.setdefault("id", str(uuid.uuid4()))
+                _canvas_elements.append({k: data[k] for k in ("type", "id", "x", "y", "content", "color") if k in data})
+                _save_canvas_state()
+            elif msg_type == "image":
+                data.setdefault("id", str(uuid.uuid4()))
+                _canvas_elements.append({k: data[k] for k in ("type", "id", "x", "y", "w", "h", "src") if k in data})
+                _save_canvas_state()
+            elif msg_type == "move":
+                el_id = data.get("id")
+                nx, ny = data.get("x"), data.get("y")
+                for el in _canvas_elements:
+                    if el.get("id") == el_id and el.get("type") in ("text", "image"):
+                        el["x"] = nx
+                        el["y"] = ny
+                        break
+                _save_canvas_state()
+            elif msg_type == "delete":
+                el_id = data.get("id")
+                _canvas_elements[:] = [e for e in _canvas_elements if e.get("id") != el_id]
+                _save_canvas_state()
+            for conn in list(_canvas_connections):
+                if conn is not websocket:
+                    try:
+                        await conn.send_json(data)
+                    except Exception:
+                        _canvas_connections.discard(conn)
+    except WebSocketDisconnect:
+        _canvas_connections.discard(websocket)
+    except Exception:
+        _canvas_connections.discard(websocket)
 
 
 @app.get("/pages/{subpath:path}", response_class=HTMLResponse)
