@@ -53,14 +53,22 @@ def test_graph_data_forwards_limit_param(client):
     """limit query param is forwarded to get_graph_data."""
     with patch("main.get_graph_data", return_value=_EMPTY) as mock_fn:
         client.get("/graph/data?limit=50")
-    mock_fn.assert_called_once_with(main_mod._gateway_base_url(), limit=50)
+    mock_fn.assert_called_once_with(
+        main_mod._lucent_base_url(),
+        limit=50,
+        bearer_token=main_mod._lucent_bearer_token(),
+    )
 
 
 def test_graph_data_default_limit(client):
     """Default limit of 400 is used when not specified."""
     with patch("main.get_graph_data", return_value=_EMPTY) as mock_fn:
         client.get("/graph/data")
-    mock_fn.assert_called_once_with(main_mod._gateway_base_url(), limit=400)
+    mock_fn.assert_called_once_with(
+        main_mod._lucent_base_url(),
+        limit=400,
+        bearer_token=main_mod._lucent_bearer_token(),
+    )
 
 
 def test_graph_data_propagates_upstream_error(client):

@@ -41,13 +41,18 @@ def test_returns_nodes_and_edges():
     assert len(result["edges"]) == 1
 
 
+def _called_url(mock_open) -> str:
+    """Pull the URL string out of the urllib Request passed to urlopen."""
+    arg = mock_open.call_args[0][0]
+    return arg.full_url if hasattr(arg, "full_url") else arg
+
+
 def test_calls_correct_url():
     """Calls /graph/data on the provided base URL."""
     mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
     with patch("urllib.request.urlopen", mock_open):
         get_graph_data("http://server:8420")
-    called_url = mock_open.call_args[0][0]
-    assert called_url.startswith("http://server:8420/graph/data")
+    assert _called_url(mock_open).startswith("http://server:8420/graph/data")
 
 
 def test_limit_included_in_url():
@@ -55,8 +60,7 @@ def test_limit_included_in_url():
     mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
     with patch("urllib.request.urlopen", mock_open):
         get_graph_data("http://server:8420", limit=50)
-    called_url = mock_open.call_args[0][0]
-    assert "limit=50" in called_url
+    assert "limit=50" in _called_url(mock_open)
 
 
 def test_default_limit_is_400():
@@ -64,8 +68,7 @@ def test_default_limit_is_400():
     mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
     with patch("urllib.request.urlopen", mock_open):
         get_graph_data("http://server:8420")
-    called_url = mock_open.call_args[0][0]
-    assert "limit=400" in called_url
+    assert "limit=400" in _called_url(mock_open)
 
 
 def test_trailing_slash_stripped_from_base_url():
@@ -73,8 +76,26 @@ def test_trailing_slash_stripped_from_base_url():
     mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
     with patch("urllib.request.urlopen", mock_open):
         get_graph_data("http://server:8420/")
-    called_url = mock_open.call_args[0][0]
+    called_url = _called_url(mock_open)
     assert "//" not in called_url.replace("http://", "")
+
+
+def test_bearer_token_sent_as_authorization_header():
+    """Bearer token is attached to the request as an Authorization header."""
+    mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
+    with patch("urllib.request.urlopen", mock_open):
+        get_graph_data("http://server:8420", bearer_token="t0k3n")
+    req = mock_open.call_args[0][0]
+    assert req.get_header("Authorization") == "Bearer t0k3n"
+
+
+def test_no_authorization_header_without_bearer_token():
+    """Without a bearer token, no Authorization header is set."""
+    mock_open = _mock_urlopen(_SAMPLE_RESPONSE)
+    with patch("urllib.request.urlopen", mock_open):
+        get_graph_data("http://server:8420")
+    req = mock_open.call_args[0][0]
+    assert req.get_header("Authorization") is None
 
 
 def test_network_error_returns_error_dict():
