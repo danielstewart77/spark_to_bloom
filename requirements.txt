@@ -5,6 +5,7 @@ openai
 markdown
 jinja2
 aiofiles
+httpx
 python-multipart
 bcrypt
 itsdangerous

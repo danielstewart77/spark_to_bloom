@@ -11,6 +11,8 @@ import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
+
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -194,22 +196,24 @@ async def _gateway_json(path: str, params: dict | None = None) -> dict | list:
         raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
 
 
-def _proxy_session_events(session_id: str):
+async def _proxy_session_events(session_id: str):
     url = f"{_gateway_base_url().rstrip('/')}/sessions/{session_id}/events"
+    headers = {"Accept": "text/event-stream", **_gateway_headers()}
+    timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
 
     try:
-        headers = {"Accept": "text/event-stream", **_gateway_headers()}
-        request = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(request) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8").strip()
-                if not line.startswith("data: "):
-                    continue
-                yield f"{line}\n\n"
-    except urllib.error.HTTPError as exc:
-        payload = {"type": "system", "content": f"upstream_error: {exc.code}"}
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("GET", url, headers=headers) as response:
+                response.raise_for_status()
+                async for raw_line in response.aiter_lines():
+                    line = raw_line.strip()
+                    if not line.startswith("data: "):
+                        continue
+                    yield f"{line}\n\n"
+    except httpx.HTTPStatusError as exc:
+        payload = {"type": "system", "content": f"upstream_error: {exc.response.status_code}"}
         yield f"data: {json.dumps(payload)}\n\n"
-    except OSError as exc:
+    except httpx.RequestError as exc:
         payload = {"type": "system", "content": f"upstream_error: {exc}"}
         yield f"data: {json.dumps(payload)}\n\n"
 

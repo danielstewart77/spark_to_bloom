@@ -1,17 +1,71 @@
 """Route tests for login and live console endpoints."""
 
+import asyncio
 import json
 import os
 import sys
 import urllib.error
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from starlette.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import auth
 import main as main_mod
+
+
+async def _collect(agen):
+    out = []
+    async for item in agen:
+        out.append(item)
+    return out
+
+
+class _FakeStreamResponse:
+    def __init__(self, lines, raise_for_status_error=None):
+        self._lines = lines
+        self._raise = raise_for_status_error
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    def raise_for_status(self):
+        if self._raise:
+            raise self._raise
+
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
+
+
+class _FakeStreamError:
+    def __init__(self, exc):
+        self._exc = exc
+
+    async def __aenter__(self):
+        raise self._exc
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _FakeAsyncClient:
+    def __init__(self, stream_cm):
+        self._stream_cm = stream_cm
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    def stream(self, method, url, headers=None):
+        return self._stream_cm
 
 
 def _authed_client(tmp_path, monkeypatch):
@@ -43,10 +97,10 @@ def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
 def test_console_stream_proxies_sse(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 
-    with patch(
-        "main._proxy_session_events",
-        return_value=iter(["data: {\"type\":\"assistant\",\"content\":\"hello\"}\n\n"]),
-    ):
+    async def fake_proxy(session_id):
+        yield "data: {\"type\":\"assistant\",\"content\":\"hello\"}\n\n"
+
+    with patch("main._proxy_session_events", side_effect=fake_proxy):
         response = client.get("/api/console/sess-1/stream")
 
     assert response.status_code == 200
@@ -54,41 +108,30 @@ def test_console_stream_proxies_sse(tmp_path, monkeypatch):
     assert "assistant" in response.text
 
 
-class _FakeResponse:
-    def __init__(self, lines):
-        self._lines = lines
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def __iter__(self):
-        return iter(self._lines)
-
-
 def test_proxy_session_events_does_not_fabricate_session_closed_on_timeout():
-    with patch("main.urllib.request.urlopen", side_effect=OSError("timed out")):
-        events = list(main_mod._proxy_session_events("sess-1"))
+    stream_cm = _FakeStreamError(httpx.ConnectError("timed out"))
+    fake_client = _FakeAsyncClient(stream_cm)
+    with patch("main.httpx.AsyncClient", return_value=fake_client):
+        events = asyncio.run(_collect(main_mod._proxy_session_events("sess-1")))
 
-    assert events == [
-        "data: " + json.dumps({"type": "system", "content": "upstream_error: timed out"}) + "\n\n"
-    ]
+    assert len(events) == 1
+    payload = json.loads(events[0][len("data: "):].rstrip("\n"))
+    assert payload["type"] == "system"
+    assert "upstream_error" in payload["content"]
+    assert "session_closed" not in events[0]
 
 
 def test_proxy_session_events_preserves_real_session_closed():
-    response = _FakeResponse(
-        [
-            b'data: {"type":"assistant","content":"hello"}\n',
-            b"\n",
-            b'data: {"type":"session_closed","session_id":"sess-1"}\n',
-            b"\n",
-        ]
-    )
-
-    with patch("main.urllib.request.urlopen", return_value=response):
-        events = list(main_mod._proxy_session_events("sess-1"))
+    lines = [
+        'data: {"type":"assistant","content":"hello"}',
+        "",
+        'data: {"type":"session_closed","session_id":"sess-1"}',
+        "",
+    ]
+    stream_cm = _FakeStreamResponse(lines)
+    fake_client = _FakeAsyncClient(stream_cm)
+    with patch("main.httpx.AsyncClient", return_value=fake_client):
+        events = asyncio.run(_collect(main_mod._proxy_session_events("sess-1")))
 
     assert events == [
         'data: {"type":"assistant","content":"hello"}\n\n',
