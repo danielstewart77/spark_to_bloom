@@ -1312,7 +1312,12 @@ nav ul li.user-controls {
     border-radius: 4px;
     font-family: inherit;
     font-size: 0.95em;
+    width: 100%;
+    box-sizing: border-box;
 }
+.rules-create label,
+.rules-edit label { width: 100%; }
+.rules-edit textarea { min-height: 5rem; resize: vertical; }
 .rules-create button,
 .rules-edit button,
 .rules-actions button {
