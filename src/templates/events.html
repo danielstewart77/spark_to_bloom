@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="events-page">
+    <div class="terminal-box">
+        <h2>events</h2>
+        <p>recent inbound alerts triaged into events.db. newest first.</p>
+        {% if error %}
+        <p class="events-error">{{ error }}</p>
+        {% endif %}
+        {% if not events and not error %}
+        <p>no events recorded yet.</p>
+        {% endif %}
+    </div>
+    {% for ev in events %}
+    <div class="terminal-box event-row event-status-{{ ev.status }}">
+        <div class="event-head">
+            <span class="event-when">{{ ev.occurred_at }}</span>
+            <span class="event-class">{{ ev.class_slug }}</span>
+            <span class="event-bucket">{{ ev.bucket }}</span>
+            <span class="event-status">{{ ev.status }}</span>
+            {% if ev.count is not none %}
+            <span class="event-count">count {{ ev.count }}</span>
+            {% endif %}
+            <span class="event-source">{{ ev.source }}</span>
+            <span class="event-id">#{{ ev.id }}</span>
+        </div>
+        {% if ev.summary %}
+        <p class="event-summary">{{ ev.summary }}</p>
+        {% endif %}
+        {% if ev.reasoning %}
+        <p class="event-reasoning"><strong>llm:</strong> {{ ev.reasoning }}</p>
+        {% endif %}
+        {% if ev.repeat_headline %}
+        <div class="event-repeat">
+            <p><strong>repeat analysis:</strong> {{ ev.repeat_headline }}</p>
+            {% if ev.repeat_causes %}
+            <p><strong>likely causes:</strong></p>
+            <ul>{% for c in ev.repeat_causes %}<li>{{ c }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if ev.repeat_checks %}
+            <p><strong>next checks:</strong></p>
+            <ul>{% for c in ev.repeat_checks %}<li>{{ c }}</li>{% endfor %}</ul>
+            {% endif %}
+            {% if ev.repeat_recommendation %}
+            <p><strong>recommended:</strong> {{ ev.repeat_recommendation }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if ev.action_log %}
+        <p class="event-action">{{ ev.action_log }}</p>
+        {% endif %}
+        {% if ev.hints %}
+        <p class="event-hints">hints: {{ ev.hints | join(', ') }}</p>
+        {% endif %}
+        {% if ev.excerpt %}
+        <details class="event-excerpt">
+            <summary>payload excerpt</summary>
+            <pre>{{ ev.excerpt }}</pre>
+        </details>
+        {% endif %}
+    </div>
+    {% endfor %}
+</main>
+{% endblock %}

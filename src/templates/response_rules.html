@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="rules-page">
+    <div class="terminal-box">
+        <h2>response rules</h2>
+        <p>read-only view. edits go through the event_triage api for now.</p>
+        {% if error %}
+        <p class="events-error">{{ error }}</p>
+        {% endif %}
+        {% if not rules and not error %}
+        <p>no rules registered yet.</p>
+        {% endif %}
+    </div>
+    {% for r in rules %}
+    <div class="terminal-box rule-row rule-state-{{ r.approval_state }}">
+        <div class="event-head">
+            <span class="event-class">{{ r.class_slug }}</span>
+            <span class="event-bucket">{{ r.bucket }}</span>
+            <span class="event-status">{{ r.approval_state }}</span>
+            {% if r.auto_apply %}<span class="rule-auto">auto-apply</span>{% endif %}
+            <span class="event-id">#{{ r.id }}</span>
+        </div>
+        <p class="event-summary"><strong>{{ r.name }}</strong> &mdash; action: {{ r.action_kind }}</p>
+        {% if r.condition_expr %}
+        <p class="event-reasoning"><strong>condition:</strong> {{ r.condition_expr }}</p>
+        {% endif %}
+        {% if r.params %}
+        <details class="event-excerpt">
+            <summary>action params</summary>
+            <pre>{{ r.params | tojson(indent=2) }}</pre>
+        </details>
+        {% endif %}
+        <p class="event-hints">
+            fired {{ r.fire_count }}x
+            {% if r.last_fired_at %}&middot; last fired {{ r.last_fired_at }}{% endif %}
+            {% if r.authorized_by %}&middot; authorized by {{ r.authorized_by }}{% endif %}
+            &middot; created {{ r.created_at }}
+        </p>
+    </div>
+    {% endfor %}
+</main>
+{% endblock %}

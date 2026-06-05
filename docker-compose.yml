@@ -15,6 +15,7 @@ services:
       - STB_DB_PATH=/data/stb.db
       - VOICE_API_URL=${VOICE_API_URL:-http://hive-mind-voice:8422}
       - LUCENT_DB_PATH=${LUCENT_DB_PATH:-/lucent/lucent.db}
+      - EVENT_TRIAGE_DB_PATH=${EVENT_TRIAGE_DB_PATH:-/event_triage/events.db}
     ports:
       - "5000:5000"
     volumes:
@@ -23,6 +24,7 @@ services:
       - ./scripts:/scripts
       - ${HIVE_INIT_HOST_PATH:-/home/daniel/Storage/Dev/hive-init}:/srv/hive-init:ro
       - ${LUCENT_DB_HOST_DIR:-/home/daniel/Storage/Dev/hive_nervous_system/data}:/lucent:ro
+      - ${EVENT_TRIAGE_DB_HOST_DIR:-/home/daniel/Storage/Dev/event_triage/data}:/event_triage:ro
     networks:
       - hivemind
 

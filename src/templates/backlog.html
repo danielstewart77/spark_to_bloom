@@ -177,13 +177,6 @@
   })();
 
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('code.language-mermaid').forEach(function (el) {
-      var pre = el.parentElement;
-      var div = document.createElement('div');
-      div.className = 'mermaid';
-      div.textContent = el.textContent;
-      pre.replaceWith(div);
-    });
     mermaid.initialize({ startOnLoad: false, theme: 'dark' });
     mermaid.run();
   });

@@ -191,6 +191,14 @@ def _render_markdown(md_path: Path) -> str:
         return ""
     with open(md_path, "r", encoding="utf-8") as handle:
         md_content = handle.read()
+    # Pull mermaid fences out before codehilite gets them; emit raw HTML divs
+    # that Mermaid.js can pick up directly without any JS transformation.
+    md_content = re.sub(
+        r"```mermaid\n(.*?)\n```",
+        lambda m: f'<div class="mermaid">\n{m.group(1)}\n</div>',
+        md_content,
+        flags=re.DOTALL,
+    )
     return markdown.markdown(
         md_content,
         extensions=["fenced_code", "codehilite", "toc", "tables"],
@@ -920,6 +928,129 @@ async def blog_article(request: Request, subpath: str):
         return _render_template(request, "pr.html", content=html_content)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error reading article: {exc}") from exc
+
+
+def _event_triage_db_path() -> str:
+    return os.getenv("EVENT_TRIAGE_DB_PATH", "/event_triage/events.db")
+
+
+def _open_event_triage_readonly() -> sqlite3.Connection:
+    path = _event_triage_db_path()
+    if not os.path.exists(path):
+        raise HTTPException(status_code=503, detail="event_triage database not mounted")
+    uri = f"file:{path}?mode=ro&immutable=0"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.get("/events", response_class=HTMLResponse)
+async def events_page(request: Request, limit: int = 100):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    safe_limit = max(1, min(int(limit), 500))
+    try:
+        conn = _open_event_triage_readonly()
+    except HTTPException as exc:
+        return _render_template(
+            request, "events.html", events=[], error=exc.detail, limit=safe_limit
+        )
+    try:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.occurred_at, e.source, e.status, e.summary,
+                   e.action_log, e.payload_json, e.response_rule_id,
+                   c.slug AS class_slug, c.label AS class_label, c.bucket
+              FROM events e
+              JOIN event_classes c ON c.id = e.event_class_id
+             ORDER BY datetime(e.occurred_at) DESC
+             LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    events = []
+    for r in rows:
+        try:
+            payload = json.loads(r["payload_json"] or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        meta = payload.get("classify_meta") or {}
+        repeat = payload.get("repeat_analysis") or {}
+        events.append({
+            "id": r["id"],
+            "occurred_at": r["occurred_at"],
+            "source": r["source"],
+            "status": r["status"],
+            "summary": r["summary"] or "",
+            "action_log": r["action_log"] or "",
+            "class_slug": r["class_slug"],
+            "class_label": r["class_label"],
+            "bucket": r["bucket"],
+            "rule_id": r["response_rule_id"],
+            "reasoning": meta.get("reasoning", ""),
+            "path": meta.get("path", ""),
+            "hints": meta.get("hints", []) or [],
+            "count": payload.get("count"),
+            "excerpt": payload.get("excerpt", ""),
+            "repeat_headline": repeat.get("headline", ""),
+            "repeat_recommendation": repeat.get("recommended_action", ""),
+            "repeat_causes": repeat.get("likely_causes", []) or [],
+            "repeat_checks": repeat.get("next_checks", []) or [],
+        })
+    return _render_template(
+        request, "events.html", events=events, error=None, limit=safe_limit
+    )
+
+
+@app.get("/response_rules", response_class=HTMLResponse)
+async def response_rules_page(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    try:
+        conn = _open_event_triage_readonly()
+    except HTTPException as exc:
+        return _render_template(
+            request, "response_rules.html", rules=[], error=exc.detail
+        )
+    try:
+        rows = conn.execute(
+            """
+            SELECT r.id, r.name, r.condition_expr, r.action_kind,
+                   r.action_params_json, r.auto_apply, r.approval_state,
+                   r.authorized_by, r.created_at, r.last_fired_at, r.fire_count,
+                   c.slug AS class_slug, c.bucket
+              FROM response_rules r
+              JOIN event_classes c ON c.id = r.event_class_id
+             ORDER BY c.slug, r.id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    rules = []
+    for r in rows:
+        try:
+            params = json.loads(r["action_params_json"] or "{}")
+        except (TypeError, ValueError):
+            params = {}
+        rules.append({
+            "id": r["id"],
+            "name": r["name"],
+            "condition_expr": r["condition_expr"] or "",
+            "action_kind": r["action_kind"],
+            "params": params,
+            "auto_apply": bool(r["auto_apply"]),
+            "approval_state": r["approval_state"],
+            "authorized_by": r["authorized_by"] or "",
+            "created_at": r["created_at"],
+            "last_fired_at": r["last_fired_at"] or "",
+            "fire_count": r["fire_count"],
+            "class_slug": r["class_slug"],
+            "bucket": r["bucket"],
+        })
+    return _render_template(request, "response_rules.html", rules=rules, error=None)
 
 
 @app.get("/health")
