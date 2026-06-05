@@ -83,9 +83,6 @@
             <label>content:
                 <textarea name="content" rows="3" required></textarea>
             </label>
-            <label>data_class:
-                <input type="text" name="data_class">
-            </label>
             <label>tags:
                 <input type="text" name="tags">
             </label>
@@ -153,7 +150,6 @@
         editBtn.addEventListener('click', () => {
             const ta = editForm.querySelector('[name="content"]');
             ta.value = rule.content;
-            editForm.querySelector('[name="data_class"]').value = rule.data_class;
             editForm.querySelector('[name="tags"]').value = rule.tags;
             editForm.style.display = 'block';
             bindAutoGrow(ta);
@@ -165,7 +161,6 @@
             ev.preventDefault();
             const payload = {
                 content: editForm.querySelector('[name="content"]').value,
-                data_class: editForm.querySelector('[name="data_class"]').value,
                 tags: editForm.querySelector('[name="tags"]').value,
             };
             try {

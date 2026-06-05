@@ -1052,13 +1052,14 @@ async def api_rules_create(request: Request, user: dict = Depends(require_auth))
 async def api_rules_update(rule_id: str, request: Request, user: dict = Depends(require_auth)):
     del user
     body = await request.json()
-    payload = {
-        "content": (body.get("content") or "").strip(),
-        "data_class": (body.get("data_class") or "").strip(),
-        "tags": (body.get("tags") or "").strip(),
-    }
-    if not payload["content"]:
+    content = (body.get("content") or "").strip()
+    tags = (body.get("tags") or "").strip()
+    if not content:
         raise HTTPException(status_code=400, detail="content is required")
+    # Intentionally never forward data_class on update: lucent's memory_update
+    # rewrites `tier` from DATA_CLASS_REGISTRY whenever data_class is set,
+    # which would silently demote standing rules to contextual.
+    payload = {"content": content, "tags": tags}
     return await _lucent_request("PUT", f"/memory/{rule_id}", json_body=payload)
 
 
