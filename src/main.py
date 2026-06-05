@@ -930,18 +930,23 @@ async def blog_article(request: Request, subpath: str):
         raise HTTPException(status_code=500, detail=f"Error reading article: {exc}") from exc
 
 
-def _event_triage_db_path() -> str:
-    return os.getenv("EVENT_TRIAGE_DB_PATH", "/event_triage/events.db")
+def _event_triage_base_url() -> str:
+    return os.getenv("EVENT_TRIAGE_URL", "http://host.docker.internal:8430").rstrip("/")
 
 
-def _open_event_triage_readonly() -> sqlite3.Connection:
-    path = _event_triage_db_path()
-    if not os.path.exists(path):
-        raise HTTPException(status_code=503, detail="event_triage database not mounted")
-    uri = f"file:{path}?mode=ro&immutable=1"
-    conn = sqlite3.connect(uri, uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _event_triage_headers() -> dict:
+    token = os.getenv("EVENT_TRIAGE_BEARER_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="event_triage bearer token not configured")
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _event_triage_get(path: str, params: dict | None = None) -> list:
+    base = _event_triage_base_url()
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(f"{base}{path}", params=params, headers=_event_triage_headers())
+        resp.raise_for_status()
+        return resp.json()
 
 
 @app.get("/events", response_class=HTMLResponse)
@@ -950,46 +955,32 @@ async def events_page(request: Request, limit: int = 100):
         return _login_redirect_for(request)
     safe_limit = max(1, min(int(limit), 500))
     try:
-        conn = _open_event_triage_readonly()
-    except HTTPException as exc:
+        raw_events = await _event_triage_get("/events", {"limit": safe_limit})
+        raw_classes = await _event_triage_get("/event_classes")
+    except (httpx.HTTPError, HTTPException) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else f"event_triage API unreachable: {exc}"
         return _render_template(
-            request, "events.html", events=[], error=exc.detail, limit=safe_limit
+            request, "events.html", events=[], error=detail, limit=safe_limit
         )
-    try:
-        rows = conn.execute(
-            """
-            SELECT e.id, e.occurred_at, e.source, e.status, e.summary,
-                   e.action_log, e.payload_json, e.response_rule_id,
-                   c.slug AS class_slug, c.label AS class_label, c.bucket
-              FROM events e
-              JOIN event_classes c ON c.id = e.event_class_id
-             ORDER BY datetime(e.occurred_at) DESC
-             LIMIT ?
-            """,
-            (safe_limit,),
-        ).fetchall()
-    finally:
-        conn.close()
 
+    classes_by_id = {c["id"]: c for c in raw_classes}
     events = []
-    for r in rows:
-        try:
-            payload = json.loads(r["payload_json"] or "{}")
-        except (TypeError, ValueError):
-            payload = {}
+    for r in raw_events:
+        payload = r.get("payload") or {}
         meta = payload.get("classify_meta") or {}
         repeat = payload.get("repeat_analysis") or {}
+        cls = classes_by_id.get(r["event_class_id"], {})
         events.append({
             "id": r["id"],
             "occurred_at": r["occurred_at"],
             "source": r["source"],
             "status": r["status"],
-            "summary": r["summary"] or "",
-            "action_log": r["action_log"] or "",
-            "class_slug": r["class_slug"],
-            "class_label": r["class_label"],
-            "bucket": r["bucket"],
-            "rule_id": r["response_rule_id"],
+            "summary": r.get("summary") or "",
+            "action_log": r.get("action_log") or "",
+            "class_slug": cls.get("slug", ""),
+            "class_label": cls.get("label", ""),
+            "bucket": cls.get("bucket", ""),
+            "rule_id": r.get("response_rule_id"),
             "reasoning": meta.get("reasoning", ""),
             "path": meta.get("path", ""),
             "hints": meta.get("hints", []) or [],
@@ -1010,45 +1001,32 @@ async def response_rules_page(request: Request):
     if not get_current_user_from_request(request):
         return _login_redirect_for(request)
     try:
-        conn = _open_event_triage_readonly()
-    except HTTPException as exc:
+        raw_rules = await _event_triage_get("/response_rules")
+        raw_classes = await _event_triage_get("/event_classes")
+    except (httpx.HTTPError, HTTPException) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else f"event_triage API unreachable: {exc}"
         return _render_template(
-            request, "response_rules.html", rules=[], error=exc.detail
+            request, "response_rules.html", rules=[], error=detail
         )
-    try:
-        rows = conn.execute(
-            """
-            SELECT r.id, r.name, r.condition_expr, r.action_kind,
-                   r.action_params_json, r.auto_apply, r.approval_state,
-                   r.authorized_by, r.created_at, r.last_fired_at, r.fire_count,
-                   c.slug AS class_slug, c.bucket
-              FROM response_rules r
-              JOIN event_classes c ON c.id = r.event_class_id
-             ORDER BY c.slug, r.id
-            """
-        ).fetchall()
-    finally:
-        conn.close()
+
+    classes_by_id = {c["id"]: c for c in raw_classes}
     rules = []
-    for r in rows:
-        try:
-            params = json.loads(r["action_params_json"] or "{}")
-        except (TypeError, ValueError):
-            params = {}
+    for r in sorted(raw_rules, key=lambda x: (classes_by_id.get(x["event_class_id"], {}).get("slug", ""), x["id"])):
+        cls = classes_by_id.get(r["event_class_id"], {})
         rules.append({
             "id": r["id"],
             "name": r["name"],
-            "condition_expr": r["condition_expr"] or "",
+            "condition_expr": r.get("condition_expr") or "",
             "action_kind": r["action_kind"],
-            "params": params,
-            "auto_apply": bool(r["auto_apply"]),
+            "params": r.get("action_params") or {},
+            "auto_apply": bool(r.get("auto_apply")),
             "approval_state": r["approval_state"],
-            "authorized_by": r["authorized_by"] or "",
+            "authorized_by": r.get("authorized_by") or "",
             "created_at": r["created_at"],
-            "last_fired_at": r["last_fired_at"] or "",
+            "last_fired_at": r.get("last_fired_at") or "",
             "fire_count": r["fire_count"],
-            "class_slug": r["class_slug"],
-            "bucket": r["bucket"],
+            "class_slug": cls.get("slug", ""),
+            "bucket": cls.get("bucket", ""),
         })
     return _render_template(request, "response_rules.html", rules=rules, error=None)
 
