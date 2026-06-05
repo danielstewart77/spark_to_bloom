@@ -15,12 +15,10 @@ services:
       - STB_DB_PATH=/data/stb.db
       - VOICE_API_URL=${VOICE_API_URL:-http://hive-mind-voice:8422}
       - LUCENT_DB_PATH=${LUCENT_DB_PATH:-/lucent/lucent.db}
-      - EVENT_TRIAGE_URL=${EVENT_TRIAGE_URL:-http://host.docker.internal:8430}
+      - EVENT_TRIAGE_URL=${EVENT_TRIAGE_URL:-http://event-triage:8430}
       - EVENT_TRIAGE_BEARER_TOKEN=${EVENT_TRIAGE_BEARER_TOKEN}
     ports:
       - "5000:5000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./src:/app
       - ./data:/data
