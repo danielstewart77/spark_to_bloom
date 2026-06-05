@@ -65,7 +65,8 @@
     <div class="terminal-box rule-row">
         <div class="event-head">
             <span class="event-class" data-field="tier"></span>
-            <span class="event-bucket" data-field="mind_id"></span>
+            <span class="event-bucket" data-field="mind_display"></span>
+            <span class="event-mind-raw" data-field="mind_id" title="raw mind_id in lucent"></span>
             <span class="event-status" data-field="source"></span>
             <span class="event-id" data-field="id"></span>
         </div>
@@ -132,7 +133,14 @@
         const node = rowTpl.content.firstElementChild.cloneNode(true);
         node.dataset.id = rule.id;
         node.querySelector('[data-field="tier"]').textContent = rule.tier;
-        node.querySelector('[data-field="mind_id"]').textContent = rule.mind_id;
+        const mindDisplayEl = node.querySelector('[data-field="mind_display"]');
+        mindDisplayEl.textContent = rule.mind_display || rule.mind_id;
+        const mindRawEl = node.querySelector('[data-field="mind_id"]');
+        if (rule.mind_id && rule.mind_id !== rule.mind_display) {
+            mindRawEl.textContent = '(' + rule.mind_id + ')';
+        } else {
+            mindRawEl.textContent = '';
+        }
         node.querySelector('[data-field="source"]').textContent = rule.source;
         node.querySelector('[data-field="id"]').textContent = '#' + rule.id;
         node.querySelector('[data-field="content"]').textContent = rule.content;

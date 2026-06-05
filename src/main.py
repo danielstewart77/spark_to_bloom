@@ -959,11 +959,15 @@ async def _lucent_request(
 _RULE_SOURCES = {"always-remember", "user"}
 
 
-def _normalize_rule_row(row: dict) -> dict:
+def _normalize_rule_row(row: dict, alias_index: dict) -> dict:
+    raw_mind = row.get("mind_id") or ""
+    entry = alias_index.get(raw_mind)
+    display = entry["name"] if entry else raw_mind
     return {
         "id": row.get("id"),
         "content": row.get("content") or "",
-        "mind_id": row.get("mind_id") or "",
+        "mind_id": raw_mind,
+        "mind_display": display,
         "tier": row.get("tier") or "",
         "source": row.get("source") or "",
         "data_class": row.get("data_class") or "",
@@ -982,6 +986,62 @@ async def _broker_minds_safe() -> list[dict]:
     return [m for m in raw if isinstance(m, dict)]
 
 
+def _build_alias_index(minds: list[dict]) -> dict:
+    """Map every alias (UUID and short name) to a canonical mind entry.
+
+    Lucent rows historically stamp `mind_id` with either the UUID or the
+    short name, depending on which write path created them. This index lets
+    the rules dashboard treat them as the same mind for filtering and
+    display.
+    """
+    index: dict = {}
+    for m in minds:
+        uuid = (m.get("id") or "").strip()
+        name = (m.get("name") or "").strip()
+        if not uuid and not name:
+            continue
+        entry = {"uuid": uuid, "name": name or uuid, "aliases": [a for a in (uuid, name) if a]}
+        for alias in entry["aliases"]:
+            index[alias] = entry
+    index["shared"] = {"uuid": "shared", "name": "shared", "aliases": ["shared"]}
+    return index
+
+
+async def _fetch_rules_for_mind(
+    tier: str, mind_id: str | None, alias_index: dict
+) -> list[dict]:
+    aliases = [None]
+    if mind_id and mind_id != "all":
+        entry = alias_index.get(mind_id)
+        aliases = entry["aliases"] if entry else [mind_id]
+    seen_ids: set = set()
+    out: list[dict] = []
+    for alias in aliases:
+        params: dict = {"tier": tier, "limit": 100, "offset": 0}
+        if alias is not None:
+            params["mind_id"] = alias
+        fetched = 0
+        while True:
+            data = await _lucent_request("GET", "/memory/list", params=params)
+            entries = data.get("entries") if isinstance(data, dict) else []
+            if not entries:
+                break
+            for e in entries:
+                if e.get("source") not in _RULE_SOURCES:
+                    continue
+                rid = e.get("id")
+                if rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+                out.append(_normalize_rule_row(e, alias_index))
+            fetched += len(entries)
+            total = int(data.get("total") or 0)
+            if fetched >= total or fetched >= 1000:
+                break
+            params["offset"] = fetched
+    return out
+
+
 @app.get("/rules", response_class=HTMLResponse)
 async def rules_page(request: Request):
     if not get_current_user_from_request(request):
@@ -998,25 +1058,16 @@ async def api_rules_list(
 ):
     del user
     tiers = ["standing", "contextual"] if not tier or tier == "all" else [tier]
+    minds = await _broker_minds_safe()
+    alias_index = _build_alias_index(minds)
     rows: list[dict] = []
+    seen_ids: set = set()
     for t in tiers:
-        params: dict = {"tier": t, "limit": 100, "offset": 0}
-        if mind_id and mind_id != "all":
-            params["mind_id"] = mind_id
-        seen = 0
-        while True:
-            data = await _lucent_request("GET", "/memory/list", params=params)
-            entries = data.get("entries") if isinstance(data, dict) else []
-            if not entries:
-                break
-            for e in entries:
-                if e.get("source") in _RULE_SOURCES:
-                    rows.append(_normalize_rule_row(e))
-            seen += len(entries)
-            total = int(data.get("total") or 0)
-            if seen >= total or seen >= 1000:
-                break
-            params["offset"] = seen
+        for row in await _fetch_rules_for_mind(t, mind_id, alias_index):
+            if row["id"] in seen_ids:
+                continue
+            seen_ids.add(row["id"])
+            rows.append(row)
     rows.sort(key=lambda r: (r["tier"] != "standing", -(r["created_at"] or 0)))
     return {"rules": rows, "count": len(rows)}
 

@@ -1330,4 +1330,5 @@ nav ul li.user-controls {
     cursor: pointer;
 }
 .rules-actions { display: flex; gap: 8px; margin-top: 6px; }
+.event-mind-raw { color: #6b8c6b; font-size: 0.78em; opacity: 0.8; }
 .rules-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
