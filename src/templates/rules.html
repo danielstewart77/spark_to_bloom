@@ -112,6 +112,17 @@
         errBox.style.display = 'block'; errBox.textContent = msg;
     }
 
+    function autoGrow(ta) {
+        ta.style.height = 'auto';
+        ta.style.height = (ta.scrollHeight + 2) + 'px';
+    }
+
+    function bindAutoGrow(ta) {
+        if (!ta || ta.dataset.autogrowBound === '1') return;
+        ta.dataset.autogrowBound = '1';
+        ta.addEventListener('input', () => autoGrow(ta));
+    }
+
     function fmtTimestamp(ts) {
         if (!ts) return '';
         const n = Number(ts);
@@ -140,10 +151,13 @@
         const deleteBtn = node.querySelector('[data-action="delete"]');
 
         editBtn.addEventListener('click', () => {
-            editForm.querySelector('[name="content"]').value = rule.content;
+            const ta = editForm.querySelector('[name="content"]');
+            ta.value = rule.content;
             editForm.querySelector('[name="data_class"]').value = rule.data_class;
             editForm.querySelector('[name="tags"]').value = rule.tags;
             editForm.style.display = 'block';
+            bindAutoGrow(ta);
+            autoGrow(ta);
         });
         cancelBtn.addEventListener('click', () => { editForm.style.display = 'none'; });
 
@@ -199,6 +213,8 @@
         }
     }
 
+    bindAutoGrow(createForm.querySelector('[name="content"]'));
+
     createForm.addEventListener('submit', async (ev) => {
         ev.preventDefault();
         createStatus.textContent = '';
@@ -218,7 +234,9 @@
             });
             if (!r.ok) throw new Error('create failed: ' + r.status + ' ' + (await r.text()));
             createStatus.textContent = 'created.';
-            createForm.querySelector('[name="content"]').value = '';
+            const createTa = createForm.querySelector('[name="content"]');
+            createTa.value = '';
+            autoGrow(createTa);
             await loadRules();
         } catch (e) { createStatus.textContent = String(e); }
     });
