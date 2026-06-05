@@ -1047,7 +1047,21 @@ async def rules_page(request: Request):
     if not get_current_user_from_request(request):
         return _login_redirect_for(request)
     minds = await _broker_minds_safe()
-    return _render_template(request, "rules.html", minds=minds)
+    alias_to_canonical: dict[str, str] = {"shared": "shared"}
+    for m in minds:
+        uuid = (m.get("id") or "").strip()
+        name = (m.get("name") or "").strip()
+        canonical = uuid or name
+        if uuid:
+            alias_to_canonical[uuid] = canonical
+        if name:
+            alias_to_canonical[name] = canonical
+    return _render_template(
+        request,
+        "rules.html",
+        minds=minds,
+        alias_to_canonical_json=json.dumps(alias_to_canonical),
+    )
 
 
 @app.get("/api/rules")
@@ -1105,12 +1119,22 @@ async def api_rules_update(rule_id: str, request: Request, user: dict = Depends(
     body = await request.json()
     content = (body.get("content") or "").strip()
     tags = (body.get("tags") or "").strip()
+    new_mind = (body.get("mind_id") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
     # Intentionally never forward data_class on update: lucent's memory_update
     # rewrites `tier` from DATA_CLASS_REGISTRY whenever data_class is set,
     # which would silently demote standing rules to contextual.
-    payload = {"content": content, "tags": tags}
+    payload: dict = {"content": content, "tags": tags}
+    if new_mind:
+        alias_index = _build_alias_index(await _broker_minds_safe())
+        entry = alias_index.get(new_mind)
+        if entry:
+            payload["mind_id"] = entry["uuid"] or entry["name"]
+        elif new_mind == "shared":
+            payload["mind_id"] = "shared"
+        else:
+            raise HTTPException(status_code=400, detail=f"unknown mind: {new_mind}")
     return await _lucent_request("PUT", f"/memory/{rule_id}", json_body=payload)
 
 
