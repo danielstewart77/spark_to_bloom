@@ -938,7 +938,7 @@ def _open_event_triage_readonly() -> sqlite3.Connection:
     path = _event_triage_db_path()
     if not os.path.exists(path):
         raise HTTPException(status_code=503, detail="event_triage database not mounted")
-    uri = f"file:{path}?mode=ro&immutable=0"
+    uri = f"file:{path}?mode=ro&immutable=1"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     return conn
