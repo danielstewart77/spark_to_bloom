@@ -1265,3 +1265,64 @@ nav ul li.user-controls {
     border-radius: 4px;
 }
 .event-repeat ul { margin: 4px 0 4px 18px; }
+
+.rules-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+}
+.rules-filters label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85em;
+    color: #9bb0c4;
+}
+.rules-filters select, .rules-filters button {
+    margin-top: 2px;
+    padding: 4px 8px;
+    background: rgba(0,0,0,0.25);
+    color: #e2eaf2;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 4px;
+    font-family: inherit;
+}
+.rules-create {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.rules-create label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.85em;
+    color: #9bb0c4;
+}
+.rules-create textarea,
+.rules-create input,
+.rules-create select,
+.rules-edit textarea,
+.rules-edit input {
+    margin-top: 2px;
+    padding: 6px 8px;
+    background: rgba(0,0,0,0.25);
+    color: #e2eaf2;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.95em;
+}
+.rules-create button,
+.rules-edit button,
+.rules-actions button {
+    align-self: flex-start;
+    padding: 6px 12px;
+    background: rgba(56, 189, 248, 0.15);
+    color: #e2eaf2;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.rules-actions { display: flex; gap: 8px; margin-top: 6px; }
+.rules-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }

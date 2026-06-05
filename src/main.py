@@ -930,6 +930,144 @@ async def blog_article(request: Request, subpath: str):
         raise HTTPException(status_code=500, detail=f"Error reading article: {exc}") from exc
 
 
+def _lucent_headers() -> dict:
+    token = _lucent_bearer_token()
+    if not token:
+        raise HTTPException(status_code=503, detail="lucent bearer token not configured")
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _lucent_request(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    json_body: dict | None = None,
+):
+    url = f"{_lucent_base_url().rstrip('/')}{path}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.request(
+            method, url, params=params, json=json_body, headers=_lucent_headers()
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        if resp.status_code == 204 or not resp.content:
+            return {}
+        return resp.json()
+
+
+_RULE_SOURCES = {"always-remember", "user"}
+
+
+def _normalize_rule_row(row: dict) -> dict:
+    return {
+        "id": row.get("id"),
+        "content": row.get("content") or "",
+        "mind_id": row.get("mind_id") or "",
+        "tier": row.get("tier") or "",
+        "source": row.get("source") or "",
+        "data_class": row.get("data_class") or "",
+        "tags": row.get("tags") or "",
+        "created_at": row.get("created_at"),
+    }
+
+
+async def _broker_minds_safe() -> list[dict]:
+    try:
+        raw = await _gateway_json("/broker/minds")
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    return [m for m in raw if isinstance(m, dict)]
+
+
+@app.get("/rules", response_class=HTMLResponse)
+async def rules_page(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    minds = await _broker_minds_safe()
+    return _render_template(request, "rules.html", minds=minds)
+
+
+@app.get("/api/rules")
+async def api_rules_list(
+    mind_id: str | None = None,
+    tier: str | None = None,
+    user: dict = Depends(require_auth),
+):
+    del user
+    tiers = ["standing", "contextual"] if not tier or tier == "all" else [tier]
+    rows: list[dict] = []
+    for t in tiers:
+        params: dict = {"tier": t, "limit": 100, "offset": 0}
+        if mind_id and mind_id != "all":
+            params["mind_id"] = mind_id
+        seen = 0
+        while True:
+            data = await _lucent_request("GET", "/memory/list", params=params)
+            entries = data.get("entries") if isinstance(data, dict) else []
+            if not entries:
+                break
+            for e in entries:
+                if e.get("source") in _RULE_SOURCES:
+                    rows.append(_normalize_rule_row(e))
+            seen += len(entries)
+            total = int(data.get("total") or 0)
+            if seen >= total or seen >= 1000:
+                break
+            params["offset"] = seen
+    rows.sort(key=lambda r: (r["tier"] != "standing", -(r["created_at"] or 0)))
+    return {"rules": rows, "count": len(rows)}
+
+
+@app.post("/api/rules")
+async def api_rules_create(request: Request, user: dict = Depends(require_auth)):
+    del user
+    body = await request.json()
+    content = (body.get("content") or "").strip()
+    mind_id = (body.get("mind_id") or "").strip()
+    tier = (body.get("tier") or "").strip()
+    data_class = (body.get("data_class") or "feedback").strip()
+    tags = (body.get("tags") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+    if not mind_id:
+        raise HTTPException(status_code=400, detail="mind_id is required")
+    if tier not in {"standing", "contextual"}:
+        raise HTTPException(status_code=400, detail="tier must be standing or contextual")
+    source = "always-remember" if tier == "standing" else "user"
+    payload = {
+        "content": content,
+        "mind_id": mind_id,
+        "tier": tier,
+        "source": source,
+        "data_class": data_class,
+        "tags": tags,
+    }
+    return await _lucent_request("POST", "/memory/store", json_body=payload)
+
+
+@app.put("/api/rules/{rule_id}")
+async def api_rules_update(rule_id: str, request: Request, user: dict = Depends(require_auth)):
+    del user
+    body = await request.json()
+    payload = {
+        "content": (body.get("content") or "").strip(),
+        "data_class": (body.get("data_class") or "").strip(),
+        "tags": (body.get("tags") or "").strip(),
+    }
+    if not payload["content"]:
+        raise HTTPException(status_code=400, detail="content is required")
+    return await _lucent_request("PUT", f"/memory/{rule_id}", json_body=payload)
+
+
+@app.delete("/api/rules/{rule_id}")
+async def api_rules_delete(rule_id: str, user: dict = Depends(require_auth)):
+    del user
+    return await _lucent_request("DELETE", f"/memory/{rule_id}")
+
+
 def _event_triage_base_url() -> str:
     return os.getenv("EVENT_TRIAGE_URL", "http://host.docker.internal:8430").rstrip("/")
 
