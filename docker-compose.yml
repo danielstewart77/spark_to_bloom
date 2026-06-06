@@ -17,6 +17,8 @@ services:
       - LUCENT_DB_PATH=${LUCENT_DB_PATH:-/lucent/lucent.db}
       - EVENT_TRIAGE_URL=${EVENT_TRIAGE_URL:-http://event-triage:8430}
       - EVENT_TRIAGE_BEARER_TOKEN=${EVENT_TRIAGE_BEARER_TOKEN}
+      - BTC_LEDGER_URL=${BTC_LEDGER_URL:-http://btc-ledger:8427}
+      - BTC_LEDGER_API_TOKEN=${BTC_LEDGER_API_TOKEN}
     ports:
       - "5000:5000"
     volumes:

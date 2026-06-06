@@ -1,0 +1,411 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="btc-page">
+  <div class="btc-shell">
+
+    <div class="btc-topbar">
+      <span class="btc-title">bitcoin accumulation tracker</span>
+      <div class="btc-controls">
+        <select id="btc-days" class="btc-select">
+          <option value="30">30d</option>
+          <option value="90" selected>90d</option>
+          <option value="180">180d</option>
+          <option value="365">365d</option>
+        </select>
+        <button id="btc-refresh" class="memory-action-btn" type="button">refresh</button>
+      </div>
+    </div>
+
+    <div class="btc-stats-row" id="btc-stats-row">
+      <div class="btc-stat-card" id="stat-price">
+        <div class="btc-stat-label">current price</div>
+        <div class="btc-stat-value" id="val-price">—</div>
+      </div>
+      <div class="btc-stat-card" id="stat-drawdown">
+        <div class="btc-stat-label">drawdown from ath</div>
+        <div class="btc-stat-value" id="val-drawdown">—</div>
+      </div>
+      <div class="btc-stat-card" id="stat-mayer">
+        <div class="btc-stat-label">mayer multiple</div>
+        <div class="btc-stat-value" id="val-mayer">—</div>
+      </div>
+      <div class="btc-stat-card" id="stat-fg">
+        <div class="btc-stat-label">fear &amp; greed</div>
+        <div class="btc-stat-value" id="val-fg">—</div>
+      </div>
+      <div class="btc-stat-card">
+        <div class="btc-stat-label">total invested</div>
+        <div class="btc-stat-value" id="val-invested">—</div>
+      </div>
+      <div class="btc-stat-card">
+        <div class="btc-stat-label">total btc</div>
+        <div class="btc-stat-value" id="val-btc">—</div>
+      </div>
+      <div class="btc-stat-card">
+        <div class="btc-stat-label">avg cost basis</div>
+        <div class="btc-stat-value" id="val-basis">—</div>
+      </div>
+      <div class="btc-stat-card">
+        <div class="btc-stat-label">alerts fired</div>
+        <div class="btc-stat-value" id="val-alerts">—</div>
+      </div>
+    </div>
+
+    <div class="btc-chart-box">
+      <canvas id="btc-chart"></canvas>
+    </div>
+
+    <div class="btc-alerts-box">
+      <div class="btc-section-title">recent alerts</div>
+      <div class="btc-table-scroll">
+        <table class="btc-table" id="btc-alerts-table">
+          <thead>
+            <tr>
+              <th>time</th>
+              <th>tier</th>
+              <th>price</th>
+              <th>drawdown</th>
+              <th>mayer</th>
+              <th>f&amp;g</th>
+              <th>suggested buy</th>
+              <th>signals</th>
+            </tr>
+          </thead>
+          <tbody id="btc-alerts-body">
+            <tr><td colspan="8" class="btc-loading">loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const TIER_COLOR = {
+    opportunistic: '#38bdf8',
+    strong: '#f59e0b',
+    deep_value: '#ef4444',
+    generational: '#a855f7',
+  };
+  const TIER_RANK = { none: 0, opportunistic: 1, strong: 2, deep_value: 3, generational: 4 };
+
+  let chart = null;
+
+  function fmtUSD(n) {
+    if (n == null) return '—';
+    return '$' + Math.round(n).toLocaleString();
+  }
+  function fmtPct(n) {
+    if (n == null) return '—';
+    return n.toFixed(1) + '%';
+  }
+  function fmtBTC(n) {
+    if (n == null) return '—';
+    return n.toFixed(8);
+  }
+  function fmtDate(epoch) {
+    if (!epoch) return '';
+    return new Date(epoch * 1000).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+  }
+
+  function setVal(id, text, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    if (cls) el.className = 'btc-stat-value ' + cls;
+  }
+
+  async function loadLatest() {
+    try {
+      const r = await fetch('/api/btc/latest', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!d) return;
+      setVal('val-price', fmtUSD(d.price_usd));
+      const dd = d.drawdown_pct;
+      setVal('val-drawdown', fmtPct(dd), dd != null && dd > 35 ? 'stat-warn' : '');
+      const mm = d.mayer_multiple;
+      setVal('val-mayer', mm != null ? mm.toFixed(2) : '—', mm != null && mm < 0.85 ? 'stat-warn' : '');
+      const fg = d.fear_greed;
+      setVal('val-fg', fg != null ? fg + (d.fear_greed_classification ? ' · ' + d.fear_greed_classification.toLowerCase() : '') : '—',
+        fg != null && fg < 25 ? 'stat-warn' : '');
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadStats() {
+    try {
+      const r = await fetch('/api/btc/stats', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const d = await r.json();
+      setVal('val-invested', fmtUSD(d.total_invested_usd));
+      setVal('val-btc', fmtBTC(d.total_btc));
+      setVal('val-basis', fmtUSD(d.average_cost_basis_usd));
+      setVal('val-alerts', d.alert_count != null ? String(d.alert_count) : '—');
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadChart(days) {
+    try {
+      const [obsResp, alertsResp] = await Promise.all([
+        fetch('/api/btc/observations?days=' + days, { credentials: 'same-origin' }),
+        fetch('/api/btc/alerts?days=' + days, { credentials: 'same-origin' }),
+      ]);
+      if (!obsResp.ok) return;
+      const obs = (await obsResp.json()).slice().sort((a, b) => a.timestamp - b.timestamp);
+      const alerts = alertsResp.ok ? (await alertsResp.json()).sort((a, b) => a.timestamp - b.timestamp) : [];
+
+      renderAlerts(alerts);
+
+      const labels = obs.map(o => new Date(o.timestamp * 1000));
+      const prices = obs.map(o => o.price_usd);
+      const ma200 = obs.map(o => o.ma_200d || null);
+
+      const alertAnnotations = {};
+      alerts.forEach((a, i) => {
+        const color = TIER_COLOR[a.tier] || '#ffffff';
+        alertAnnotations['alert_' + i] = {
+          type: 'line',
+          scaleID: 'x',
+          value: new Date(a.timestamp * 1000),
+          borderColor: color,
+          borderWidth: 1.5,
+          borderDash: [4, 3],
+          label: {
+            display: true,
+            content: a.tier.replace('_', ' '),
+            color: color,
+            backgroundColor: 'rgba(10,14,25,0.7)',
+            font: { size: 9 },
+            position: 'start',
+          },
+        };
+      });
+
+      const ctx = document.getElementById('btc-chart');
+
+      if (chart) { chart.destroy(); chart = null; }
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'BTC Price',
+              data: prices,
+              borderColor: '#38bdf8',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.1,
+              yAxisID: 'y',
+            },
+            {
+              label: '200d MA',
+              data: ma200,
+              borderColor: 'rgba(245,158,11,0.6)',
+              borderWidth: 1,
+              pointRadius: 0,
+              borderDash: [5, 4],
+              tension: 0.1,
+              yAxisID: 'y',
+              spanGaps: true,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e7e7de', font: { family: 'Fira Code' } } },
+            tooltip: {
+              backgroundColor: 'rgba(10,14,25,0.9)',
+              titleColor: '#38bdf8',
+              bodyColor: '#e7e7de',
+              callbacks: {
+                label: ctx => {
+                  const v = ctx.parsed.y;
+                  return ctx.dataset.label + ': ' + (v != null ? '$' + Math.round(v).toLocaleString() : '—');
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: 'day', displayFormats: { day: 'MMM d' } },
+              ticks: { color: '#e7e7de', font: { family: 'Fira Code', size: 10 }, maxTicksLimit: 8 },
+              grid: { color: 'rgba(255,255,255,0.06)' },
+            },
+            y: {
+              ticks: {
+                color: '#e7e7de',
+                font: { family: 'Fira Code', size: 10 },
+                callback: v => '$' + Math.round(v).toLocaleString(),
+              },
+              grid: { color: 'rgba(255,255,255,0.06)' },
+            },
+          },
+        },
+      });
+
+    } catch (e) { console.error('chart error', e); }
+  }
+
+  function renderAlerts(alerts) {
+    const tbody = document.getElementById('btc-alerts-body');
+    if (!alerts.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="btc-loading">no alerts yet</td></tr>';
+      return;
+    }
+    const rows = alerts.slice().reverse().slice(0, 50).map(a => {
+      const color = TIER_COLOR[a.tier] || '#e7e7de';
+      const tierLabel = a.tier.replace('_', ' ');
+      const signals = (a.signals_active || []).join(', ') || '—';
+      return `<tr>
+        <td class="btc-td-mono">${fmtDate(a.timestamp)}</td>
+        <td><span class="btc-tier-badge" style="color:${color};border-color:${color}">${tierLabel}</span></td>
+        <td class="btc-td-mono">${fmtUSD(a.price_usd)}</td>
+        <td class="btc-td-mono">${fmtPct(a.drawdown_pct)}</td>
+        <td class="btc-td-mono">${a.mayer_multiple != null ? a.mayer_multiple.toFixed(2) : '—'}</td>
+        <td class="btc-td-mono">${a.fear_greed != null ? a.fear_greed : '—'}</td>
+        <td class="btc-td-mono">${fmtUSD(a.suggested_buy_usd)}</td>
+        <td class="btc-td-signals">${signals}</td>
+      </tr>`;
+    }).join('');
+    tbody.innerHTML = rows;
+  }
+
+  async function refresh() {
+    const days = parseInt(document.getElementById('btc-days').value, 10);
+    await Promise.all([loadLatest(), loadStats(), loadChart(days)]);
+  }
+
+  document.getElementById('btc-refresh').addEventListener('click', refresh);
+  document.getElementById('btc-days').addEventListener('change', refresh);
+
+  // Chart.js needs the time adapter — load it dynamically after Chart.js is ready
+  const adapterScript = document.createElement('script');
+  adapterScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js';
+  adapterScript.onload = refresh;
+  document.head.appendChild(adapterScript);
+})();
+</script>
+
+<style>
+.btc-page { padding: 0; }
+.btc-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+.btc-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(56,189,248,0.2);
+}
+.btc-title {
+  font-size: 1rem;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+}
+.btc-controls { display: flex; gap: 0.5rem; align-items: center; }
+.btc-select {
+  background: rgba(10,14,25,0.8);
+  color: #e7e7de;
+  border: 1px solid rgba(56,189,248,0.3);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btc-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.btc-stat-card {
+  background: rgba(10,14,25,0.7);
+  border: 1px solid rgba(56,189,248,0.15);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  min-width: 130px;
+  flex: 1;
+}
+.btc-stat-label {
+  font-size: 0.7rem;
+  color: rgba(231,231,222,0.5);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.btc-stat-value {
+  font-size: 1rem;
+  color: #e7e7de;
+  margin-top: 0.2rem;
+}
+.btc-stat-value.stat-warn { color: #f59e0b; }
+.btc-chart-box {
+  background: rgba(10,14,25,0.7);
+  border: 1px solid rgba(56,189,248,0.15);
+  border-radius: 6px;
+  padding: 1rem;
+  height: 320px;
+  position: relative;
+}
+.btc-chart-box canvas { width: 100% !important; height: 100% !important; }
+.btc-alerts-box {
+  background: rgba(10,14,25,0.7);
+  border: 1px solid rgba(56,189,248,0.15);
+  border-radius: 6px;
+  padding: 1rem;
+}
+.btc-section-title {
+  font-size: 0.8rem;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+.btc-table-scroll { overflow-x: auto; }
+.btc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.btc-table th {
+  color: rgba(231,231,222,0.5);
+  text-align: left;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid rgba(56,189,248,0.15);
+  white-space: nowrap;
+  font-weight: normal;
+}
+.btc-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: #e7e7de;
+  vertical-align: middle;
+}
+.btc-table tbody tr:hover td { background: rgba(56,189,248,0.04); }
+.btc-td-mono { font-family: 'Fira Code', monospace; white-space: nowrap; }
+.btc-td-signals { color: rgba(231,231,222,0.6); font-size: 0.72rem; }
+.btc-tier-badge {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.btc-loading { text-align: center; color: rgba(231,231,222,0.4); padding: 1.5rem 0; }
+</style>
+{% endblock %}

@@ -1245,6 +1245,69 @@ async def response_rules_page(request: Request):
     return _render_template(request, "response_rules.html", rules=rules, error=None)
 
 
+def _btc_ledger_base_url() -> str:
+    return os.getenv("BTC_LEDGER_URL", "http://btc-ledger:8427").rstrip("/")
+
+
+def _btc_ledger_headers() -> dict:
+    token = os.getenv("BTC_LEDGER_API_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="btc-ledger token not configured")
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _btc_ledger_get(path: str, params: dict | None = None):
+    url = f"{_btc_ledger_base_url()}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params, headers=_btc_ledger_headers())
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=str(exc)) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"btc-ledger unreachable: {exc}") from exc
+
+
+@app.get("/btc", response_class=HTMLResponse)
+async def btc_dashboard(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    return _render_template(request, "btc.html")
+
+
+@app.get("/api/btc/stats")
+async def api_btc_stats(user: dict = Depends(require_auth)):
+    del user
+    return await _btc_ledger_get("/stats")
+
+
+@app.get("/api/btc/observations")
+async def api_btc_observations(
+    days: int = 90,
+    user: dict = Depends(require_auth),
+):
+    del user
+    from_ts = int(time.time()) - days * 86400
+    return await _btc_ledger_get("/observations", params={"from": from_ts, "limit": 10000})
+
+
+@app.get("/api/btc/alerts")
+async def api_btc_alerts(
+    days: int = 180,
+    user: dict = Depends(require_auth),
+):
+    del user
+    from_ts = int(time.time()) - days * 86400
+    return await _btc_ledger_get("/alerts", params={"from": from_ts, "limit": 500})
+
+
+@app.get("/api/btc/latest")
+async def api_btc_latest(user: dict = Depends(require_auth)):
+    del user
+    return await _btc_ledger_get("/observations/latest")
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "message": "Spark to Bloom is running"}
