@@ -277,11 +277,6 @@ async def home(request: Request):
     return _render_template(request, "home.html")
 
 
-@app.get("/about", response_class=HTMLResponse)
-async def about(request: Request):
-    return _render_template(request, "about.html")
-
-
 @app.get("/pullrequests", response_class=HTMLResponse)
 async def pullrequests(request: Request):
     return _render_template(request, "pullrequests.html")
