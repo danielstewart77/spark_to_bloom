@@ -1,0 +1,215 @@
+{% extends "layout.html" %}
+{% block content %}
+<link rel="stylesheet" href="{{ request.url_for('static', path='real-estate-demo.css') }}">
+
+<main class="re-app" aria-label="Real estate dossier demo">
+  <header class="re-header">
+    <div>
+      <span class="re-kicker">Spark to Bloom private workspace</span>
+      <h1>Property Lens</h1>
+    </div>
+    <div class="re-demo-pill">Interactive demo</div>
+  </header>
+
+  <div class="re-progress" role="navigation" aria-label="Dossier workflow">
+    <button class="re-progress-step is-active" data-step-target="portfolio"><span>1</span> Properties</button>
+    <button class="re-progress-step" data-step-target="capture"><span>2</span> Capture</button>
+    <button class="re-progress-step" data-step-target="process"><span>3</span> Process</button>
+    <button class="re-progress-step" data-step-target="review"><span>4</span> Review</button>
+    <button class="re-progress-step" data-step-target="dossier"><span>5</span> Dossier</button>
+  </div>
+
+  <section class="re-screen is-active" data-workflow-step="portfolio" aria-labelledby="portfolio-title">
+    <div class="re-screen-heading">
+      <div>
+        <span class="re-eyebrow">Property portfolio</span>
+        <h2 id="portfolio-title">Where are we walking today?</h2>
+        <p>Open a property, collect evidence, then let Skippy process it after the walkthrough.</p>
+      </div>
+      <button class="re-button re-button-secondary" type="button">Add property</button>
+    </div>
+
+    <div class="re-property-grid">
+      <article class="re-property-card re-property-card-featured">
+        <div class="re-property-photo re-vermont-photo">
+          <span class="re-stage-badge">Walkthrough ready</span>
+        </div>
+        <div class="re-property-body">
+          <span class="re-property-location">Montrose · Houston, Texas</span>
+          <h3>1405 A Vermont</h3>
+          <div class="re-property-stats">
+            <span><strong>36</strong> photos</span>
+            <span><strong>0</strong> documents</span>
+            <span><strong>16</strong> open questions</span>
+          </div>
+          <button class="re-button re-button-primary" type="button" data-start-property="1405 A Vermont">Start walkthrough</button>
+        </div>
+      </article>
+
+      <article class="re-property-card">
+        <div class="re-property-photo re-main-photo">
+          <span class="re-stage-badge re-stage-badge-complete">Due diligence</span>
+        </div>
+        <div class="re-property-body">
+          <span class="re-property-location">Upper Kirby · Houston, Texas</span>
+          <h3>2423 B Main Street</h3>
+          <div class="re-property-stats">
+            <span><strong>28</strong> photos</span>
+            <span><strong>6</strong> documents</span>
+            <span><strong>7</strong> open questions</span>
+          </div>
+          <button class="re-button re-button-secondary" type="button" data-open-dossier>View dossier</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="re-screen" data-workflow-step="capture" aria-labelledby="capture-title" hidden>
+    <div class="re-capture-header">
+      <button class="re-back" type="button" data-go="portfolio" aria-label="Back to properties">Back</button>
+      <div>
+        <span class="re-live-dot">Field session active</span>
+        <h2 id="capture-title">1405 A Vermont</h2>
+      </div>
+      <div class="re-sync-status"><span></span> Stored locally</div>
+    </div>
+
+    <div class="re-capture-layout">
+      <section class="re-capture-panel">
+        <span class="re-eyebrow">Current area</span>
+        <div class="re-tag-row" role="group" aria-label="Current location tag">
+          <button class="re-tag is-selected" type="button">HVAC</button>
+          <button class="re-tag" type="button">Roof</button>
+          <button class="re-tag" type="button">Exterior</button>
+          <button class="re-tag" type="button">Plumbing</button>
+          <button class="re-tag" type="button">Electrical</button>
+          <button class="re-tag" type="button">Defect</button>
+        </div>
+
+        <label class="re-note-label" for="capture-note">Quick note</label>
+        <textarea id="capture-note" placeholder="Balcony mechanical closet, possible condensate leak..."></textarea>
+
+        <div class="re-capture-actions">
+          <label class="re-capture-action re-camera-action" for="camera-input">
+            <span class="re-action-icon">◎</span>
+            <strong>Take photo</strong>
+            <small>Camera or gallery</small>
+          </label>
+          <input id="camera-input" type="file" accept="image/*" capture="environment" multiple hidden>
+
+          <button class="re-capture-action" id="voice-note-button" type="button">
+            <span class="re-action-icon">◉</span>
+            <strong>Record note</strong>
+            <small id="voice-note-status">Tap to dictate</small>
+          </button>
+          <input id="audio-input" type="file" accept="audio/*" capture hidden>
+
+          <label class="re-capture-action" for="document-input">
+            <span class="re-action-icon">▤</span>
+            <strong>Add document</strong>
+            <small>PDF or invoice</small>
+          </label>
+          <input id="document-input" type="file" accept="application/pdf,image/*" multiple hidden>
+        </div>
+      </section>
+
+      <aside class="re-session-panel">
+        <div class="re-session-title">
+          <div><span class="re-eyebrow">This session</span><h3>Evidence queue</h3></div>
+          <span class="re-count-badge" id="capture-count">3 stored</span>
+        </div>
+        <div class="re-evidence-strip" id="capture-preview">
+          <figure><img src="/static/houses/1405-a-vermont/images/IMG_20260613_095444_451.jpg" alt="Daikin air handler data plate"><figcaption>HVAC · data plate</figcaption></figure>
+          <figure><img src="/static/houses/1405-a-vermont/images/IMG_20260613_095459_758.jpg" alt="Air handler installation"><figcaption>HVAC · installation</figcaption></figure>
+          <figure><img src="/static/houses/1405-a-vermont/images/IMG_20260613_100808_005.jpg" alt="Outdoor condenser"><figcaption>HVAC · possible leak</figcaption></figure>
+        </div>
+        <div class="re-session-metrics">
+          <span><strong id="stored-count">3</strong> stored</span>
+          <span><strong>0</strong> uploading</span>
+          <span><strong>0</strong> failed</span>
+        </div>
+        <button class="re-button re-button-primary re-button-wide" type="button" data-finish-capture>Finish walkthrough</button>
+        <p class="re-helper">Nothing is analyzed until you finish or ask Skippy to process it.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="re-screen" data-workflow-step="process" aria-labelledby="process-title" hidden>
+    <div class="re-centered-heading">
+      <span class="re-eyebrow">1405 A Vermont</span>
+      <h2 id="process-title">Walkthrough safely stored</h2>
+      <p>The property is ready. Start here or message Skippy on Telegram and say, “Process Vermont.”</p>
+    </div>
+    <div class="re-process-card">
+      <div class="re-process-summary">
+        <span><strong id="process-asset-count">3</strong> images</span>
+        <span><strong>1</strong> voice note</span>
+        <span><strong>0</strong> failures</span>
+      </div>
+      <div class="re-job-list">
+        <div class="re-job" data-job="store"><span class="re-job-icon">✓</span><div><strong>Assets stored</strong><small>Original files and capture metadata preserved</small></div><em>Complete</em></div>
+        <div class="re-job" data-job="extract"><span class="re-job-icon">2</span><div><strong>Extract facts</strong><small>Equipment plates, observations, and transcription</small></div><em>Waiting</em></div>
+        <div class="re-job" data-job="consolidate"><span class="re-job-icon">3</span><div><strong>Consolidate evidence</strong><small>Group duplicates by component and property system</small></div><em>Waiting</em></div>
+        <div class="re-job" data-job="draft"><span class="re-job-icon">4</span><div><strong>Prepare review</strong><small>Proposed facts and findings with source links</small></div><em>Waiting</em></div>
+      </div>
+      <button class="re-button re-button-primary re-button-wide" id="process-button" type="button">Process new evidence</button>
+      <button class="re-button re-button-primary re-button-wide" id="review-button" type="button" data-go="review" hidden>Review proposed findings</button>
+    </div>
+  </section>
+
+  <section class="re-screen" data-workflow-step="review" aria-labelledby="review-title" hidden>
+    <div class="re-screen-heading">
+      <div><span class="re-eyebrow">Evidence review · 3 proposed records</span><h2 id="review-title">Confirm what Skippy found</h2><p>Source evidence stays beside every proposed fact and finding.</p></div>
+      <button class="re-button re-button-primary" type="button" data-generate-dossier>Generate dossier</button>
+    </div>
+    <div class="re-review-layout">
+      <aside class="re-review-filters">
+        <strong>Review queue</strong>
+        <button class="is-selected" type="button">All proposed <span>3</span></button>
+        <button type="button">Equipment facts <span>1</span></button>
+        <button type="button">Findings <span>1</span></button>
+        <button type="button">Open questions <span>1</span></button>
+      </aside>
+      <div class="re-review-list">
+        <article class="re-review-card is-current">
+          <img src="/static/houses/1405-a-vermont/images/IMG_20260613_095444_451.jpg" alt="Daikin equipment label">
+          <div class="re-review-content"><span class="re-record-type">Equipment fact · High confidence</span><h3>Daikin air handler identified</h3><p>Model AMST36BU1300AA. Three-ton nominal capacity. Manufactured early 2025. R-32 refrigerant.</p><div class="re-source">Source: data-plate photo, HVAC tag</div><div class="re-review-actions"><button type="button" data-review-action="accept">Accept</button><button type="button">Edit</button><button type="button">Defer</button></div></div>
+        </article>
+        <article class="re-review-card">
+          <img src="/static/houses/1405-a-vermont/images/IMG_20260613_100808_005.jpg" alt="Outdoor condenser evidence">
+          <div class="re-review-content"><span class="re-record-type re-record-warning">Finding · Review requested</span><h3>Possible condensate or refrigerant leak</h3><p>Visible moisture at the outdoor unit. Keep open for inspection confirmation.</p><div class="re-source">Source: walkthrough photo, HVAC tag</div><div class="re-review-actions"><button type="button" data-review-action="accept">Accept</button><button type="button">Edit</button><button type="button">Reject</button></div></div>
+        </article>
+        <article class="re-review-card re-review-card-text">
+          <div class="re-review-content"><span class="re-record-type">Voice note · Open question</span><h3>Confirm the second air handler data plate</h3><p>“Need a closer shot of the second Daikin unit before we leave.”</p><div class="re-source">Source: voice note, balcony mechanical closet</div><div class="re-review-actions"><button type="button" data-review-action="accept">Accept</button><button type="button">Edit</button><button type="button">Close</button></div></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="re-screen" data-workflow-step="dossier" aria-labelledby="dossier-title" hidden>
+    <div class="re-screen-heading">
+      <div><span class="re-eyebrow">Generated from accepted evidence</span><h2 id="dossier-title">1405 A Vermont</h2><p>Decision view and narrative dossier stay linked to their sources.</p></div>
+      <div class="re-heading-actions"><button class="re-button re-button-secondary" type="button">Export PDF</button><button class="re-button re-button-primary" type="button" data-go="portfolio">Back to properties</button></div>
+    </div>
+    <div class="re-decision-strip">
+      <div><span>Evidence maturity</span><strong>Walkthrough</strong></div>
+      <div><span>Major findings</span><strong>3 proposed</strong></div>
+      <div><span>Open questions</span><strong>16</strong></div>
+      <div><span>Next action</span><strong>Add inspection</strong></div>
+    </div>
+    <div class="re-dossier-layout">
+      <aside class="re-dossier-nav"><strong>Property dossier</strong><a class="is-active" href="#">Decision summary</a><a href="#">Open questions</a><a href="#">Findings</a><a href="#">Roof</a><a href="#">Foundation</a><a href="#">HVAC</a><a href="#">Plumbing</a><a href="#">Electrical</a><a href="#">Appliances</a><a href="#">Evidence</a></aside>
+      <article class="re-dossier-preview">
+        <span class="re-record-type">HVAC · Accepted evidence</span>
+        <h3>First floor air handler</h3>
+        <div class="re-dossier-evidence"><img src="/static/houses/1405-a-vermont/images/IMG_20260613_095444_451.jpg" alt="Accepted Daikin data plate"><div><strong>Daikin AMST36BU1300AA</strong><p>Three-ton nominal capacity, manufactured early 2025. R-32 refrigerant with A2L safety classification.</p><button type="button">View source evidence</button></div></div>
+        <h3>Items requiring follow-up</h3>
+        <div class="re-finding"><span>Review</span><div><strong>Possible condensate or refrigerant leak</strong><p>Visible moisture at the balcony outdoor unit. Inspection confirmation remains open.</p></div></div>
+        <div class="re-question"><span>?</span><div><strong>Second air handler identification</strong><p>Capture a clean model and serial plate before closing the question.</p></div></div>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script src="{{ request.url_for('static', path='real-estate-demo.js') }}"></script>
+{% endblock %}

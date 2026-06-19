@@ -167,3 +167,40 @@ def test_api_btc_alerts_proxies_ledger(tmp_path, monkeypatch):
     data = response.json()
     assert isinstance(data, list)
     assert data[0]["tier"] == "opportunistic"
+
+
+def test_api_btc_purchases_requires_auth(tmp_path, monkeypatch):
+    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
+    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
+    client = TestClient(main_mod.app)
+
+    response = client.get("/api/btc/purchases")
+
+    assert response.status_code == 401
+
+
+def test_api_btc_purchases_proxies_ledger(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_purchases = [
+        {
+            "id": 1,
+            "timestamp": 1750000000,
+            "amount_usd": 500.0,
+            "btc_amount": 0.008,
+            "price_per_btc_usd": 62500.0,
+            "fees_usd": 8.0,
+            "source": "coinbase_import",
+            "exchange": "Coinbase",
+            "transaction_id": "abc123",
+            "alert_id": None,
+            "notes": "Buy",
+        }
+    ]
+
+    with patch.object(main_mod, "_btc_ledger_get", new=AsyncMock(return_value=fake_purchases)):
+        response = client.get("/api/btc/purchases?days=365")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert data[0]["price_per_btc_usd"] == 62500.0

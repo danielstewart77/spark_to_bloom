@@ -58,6 +58,84 @@ def _save_canvas_state() -> None:
         json.dump({"elements": _canvas_elements}, f)
 
 
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _xml_escape(s: str) -> str:
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _canvas_bounds(elements: list[dict]) -> tuple[float, float, float, float]:
+    """Bounding box across all elements. Falls back to a default frame when empty."""
+    xs: list[float] = []
+    ys: list[float] = []
+    for el in elements:
+        t = el.get("type")
+        if t == "path":
+            nums = [float(n) for n in _NUM_RE.findall(el.get("d", ""))]
+            # path data is a flat stream of x,y pairs once commands are stripped
+            xs.extend(nums[0::2])
+            ys.extend(nums[1::2])
+        elif t == "text":
+            xs.append(float(el.get("x", 0)))
+            ys.append(float(el.get("y", 0)))
+        elif t == "image":
+            x, y = float(el.get("x", 0)), float(el.get("y", 0))
+            xs.extend([x, x + float(el.get("w", 0))])
+            ys.extend([y, y + float(el.get("h", 0))])
+    if not xs or not ys:
+        return (0.0, 0.0, 1280.0, 800.0)
+    pad = 40.0
+    minx, miny = min(xs) - pad, min(ys) - pad
+    w = max(xs) - min(xs) + pad * 2
+    h = max(ys) - min(ys) + pad * 2
+    return (minx, miny, max(w, 1.0), max(h, 1.0))
+
+
+def _canvas_to_svg() -> str:
+    """Compose the current board into a standalone dark-background SVG.
+
+    This is the snapshot Skippy rasterizes (chrome --headless) so he can
+    actually see what Daniel drew, since he cannot watch the live websocket.
+    """
+    elements = _canvas_elements
+    minx, miny, w, h = _canvas_bounds(elements)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="{minx:.1f} {miny:.1f} {w:.1f} {h:.1f}" '
+        f'width="{w:.0f}" height="{h:.0f}">',
+        f'<rect x="{minx:.1f}" y="{miny:.1f}" width="{w:.1f}" height="{h:.1f}" fill="#090912"/>',
+    ]
+    for el in elements:
+        t = el.get("type")
+        color = _xml_escape(el.get("color", "#c9a84c"))
+        if t == "path":
+            parts.append(
+                f'<path d="{_xml_escape(el.get("d", ""))}" stroke="{color}" '
+                f'stroke-width="{el.get("sw", 2)}" fill="none" '
+                f'stroke-linecap="round" stroke-linejoin="round"/>'
+            )
+        elif t == "text":
+            parts.append(
+                f'<text x="{el.get("x", 0)}" y="{el.get("y", 0)}" fill="{color}" '
+                f'font-family="monospace" font-size="14">{_xml_escape(el.get("content", ""))}</text>'
+            )
+        elif t == "image":
+            parts.append(
+                f'<image x="{el.get("x", 0)}" y="{el.get("y", 0)}" '
+                f'width="{el.get("w", 200)}" height="{el.get("h", 150)}" '
+                f'href="{_xml_escape(el.get("src", ""))}" preserveAspectRatio="xMidYMid meet"/>'
+            )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     del app
@@ -296,6 +374,13 @@ async def linkedin(request: Request):
 @app.get("/canvas", response_class=HTMLResponse)
 async def canvas(request: Request):
     return _render_template(request, "canvas.html")
+
+
+@app.get("/real-estate-demo", response_class=HTMLResponse)
+async def real_estate_demo(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    return _render_template(request, "real_estate_demo.html")
 
 
 def _backlog_doc_context(doc: str | None, dir: str) -> dict:
@@ -830,6 +915,137 @@ async def api_console_interrupt(session_id: str, user: dict = Depends(require_au
         raise HTTPException(status_code=502, detail=f"Gateway unavailable: {exc}") from exc
 
 
+_CANVAS_KEYS = {
+    "path": ("type", "id", "color", "d", "sw"),
+    "text": ("type", "id", "x", "y", "content", "color"),
+    "image": ("type", "id", "x", "y", "w", "h", "src"),
+}
+
+
+def _apply_canvas_message(data: dict) -> bool:
+    """Apply one canvas mutation to in-memory state and persist it.
+
+    Shared by the websocket surface and the bearer-guarded /canvas/push
+    endpoint so the two paths can never drift. Mutates ``data`` in place to
+    fill a missing id. Returns True when a known message type was handled.
+    """
+    msg_type = data.get("type")
+    if msg_type == "clear":
+        _canvas_elements.clear()
+    elif msg_type in _CANVAS_KEYS:
+        data.setdefault("id", str(uuid.uuid4()))
+        _canvas_elements.append({k: data[k] for k in _CANVAS_KEYS[msg_type] if k in data})
+    elif msg_type == "move":
+        el_id = data.get("id")
+        nx, ny = data.get("x"), data.get("y")
+        for el in _canvas_elements:
+            if el.get("id") == el_id and el.get("type") in ("text", "image"):
+                el["x"] = nx
+                el["y"] = ny
+                break
+    elif msg_type == "delete":
+        el_id = data.get("id")
+        _canvas_elements[:] = [e for e in _canvas_elements if e.get("id") != el_id]
+    else:
+        return False
+    _save_canvas_state()
+    return True
+
+
+async def _broadcast_canvas(data: dict, exclude: WebSocket | None = None) -> None:
+    for conn in list(_canvas_connections):
+        if conn is exclude:
+            continue
+        try:
+            await conn.send_json(data)
+        except Exception:
+            _canvas_connections.discard(conn)
+
+
+def _canvas_push_token() -> str:
+    """Bearer that authorizes Skippy's /canvas/push writes.
+
+    Prefers a dedicated CANVAS_PUSH_TOKEN; falls back to the house
+    COMMS_BEARER_TOKEN, which both this container and Skippy already hold,
+    so drawing works without recreating the container.
+    """
+    return os.getenv("CANVAS_PUSH_TOKEN") or os.getenv("COMMS_BEARER_TOKEN", "")
+
+
+@app.post("/canvas/push")
+async def canvas_push(request: Request):
+    expected = _canvas_push_token()
+    if not expected:
+        raise HTTPException(status_code=503, detail="canvas push token not configured")
+    if request.headers.get("Authorization", "") != f"Bearer {expected}":
+        raise HTTPException(status_code=401, detail="unauthorized")
+    data = await request.json()
+    if not isinstance(data, dict) or not _apply_canvas_message(data):
+        raise HTTPException(status_code=400, detail="unknown or malformed canvas message")
+    await _broadcast_canvas(data)
+    return {"ok": True, "id": data.get("id"), "type": data.get("type")}
+
+
+@app.get("/canvas/render.svg")
+async def canvas_render_svg():
+    """Standalone SVG snapshot of the board, for Skippy to rasterize and read."""
+    return Response(content=_canvas_to_svg(), media_type="image/svg+xml")
+
+
+@app.post("/canvas/submit")
+async def canvas_submit(request: Request):
+    """Daniel's 'I'm done drawing' poke. Fires a Skippy turn via the broker."""
+    if not get_current_user_from_request(request):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    note = (body or {}).get("note", "") if isinstance(body, dict) else ""
+    element_count = len(_canvas_elements)
+    content = (
+        "Daniel finished a drawing pass on the Spark to Bloom whiteboard and wants you "
+        f"to look. The board currently has {element_count} element(s). Rasterize "
+        "GET /canvas/render.svg and respond on Telegram with what you see."
+    )
+    if note:
+        content += f" Daniel's note: {note}"
+
+    target_name = os.getenv("MIND_NAME", "skippy")
+    headers = _gateway_headers()
+    headers["Content-Type"] = "application/json"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # The broker keys minds on their UUID (mind_id), not the display
+            # name, so resolve the id from the registry before dispatching.
+            minds_resp = await client.get(
+                f"{_gateway_base_url()}/broker/minds", headers=headers
+            )
+            minds_resp.raise_for_status()
+            minds = minds_resp.json()
+            mind_id = next(
+                (m.get("id") for m in minds if m.get("name") == target_name), None
+            )
+            if not mind_id:
+                raise HTTPException(
+                    status_code=502, detail=f"mind '{target_name}' not registered in broker"
+                )
+            payload = {
+                "conversation_id": str(uuid.uuid4()),
+                "from_mind": "canvas",
+                "to_mind": mind_id,
+                "content": content,
+                "metadata": {"request_type": "canvas_review", "triggered_by": "canvas"},
+            }
+            resp = await client.post(
+                f"{_gateway_base_url()}/broker/messages", json=payload, headers=headers
+            )
+            resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"could not reach Skippy: {exc}") from exc
+    return {"ok": True, "dispatched_to": target_name, "element_count": element_count}
+
+
 @app.websocket("/ws/canvas")
 async def ws_canvas(websocket: WebSocket):
     user = get_current_user_from_request(websocket)
@@ -842,41 +1058,8 @@ async def ws_canvas(websocket: WebSocket):
             data = await websocket.receive_json()
             if not can_draw:
                 continue
-            msg_type = data.get("type")
-            if msg_type == "clear":
-                _canvas_elements.clear()
-                _save_canvas_state()
-            elif msg_type == "path":
-                data.setdefault("id", str(uuid.uuid4()))
-                _canvas_elements.append({k: data[k] for k in ("type", "id", "color", "d", "sw") if k in data})
-                _save_canvas_state()
-            elif msg_type == "text":
-                data.setdefault("id", str(uuid.uuid4()))
-                _canvas_elements.append({k: data[k] for k in ("type", "id", "x", "y", "content", "color") if k in data})
-                _save_canvas_state()
-            elif msg_type == "image":
-                data.setdefault("id", str(uuid.uuid4()))
-                _canvas_elements.append({k: data[k] for k in ("type", "id", "x", "y", "w", "h", "src") if k in data})
-                _save_canvas_state()
-            elif msg_type == "move":
-                el_id = data.get("id")
-                nx, ny = data.get("x"), data.get("y")
-                for el in _canvas_elements:
-                    if el.get("id") == el_id and el.get("type") in ("text", "image"):
-                        el["x"] = nx
-                        el["y"] = ny
-                        break
-                _save_canvas_state()
-            elif msg_type == "delete":
-                el_id = data.get("id")
-                _canvas_elements[:] = [e for e in _canvas_elements if e.get("id") != el_id]
-                _save_canvas_state()
-            for conn in list(_canvas_connections):
-                if conn is not websocket:
-                    try:
-                        await conn.send_json(data)
-                    except Exception:
-                        _canvas_connections.discard(conn)
+            if _apply_canvas_message(data):
+                await _broadcast_canvas(data, exclude=websocket)
     except WebSocketDisconnect:
         _canvas_connections.discard(websocket)
     except Exception:
@@ -1301,6 +1484,16 @@ async def api_btc_alerts(
 async def api_btc_latest(user: dict = Depends(require_auth)):
     del user
     return await _btc_ledger_get("/observations/latest")
+
+
+@app.get("/api/btc/purchases")
+async def api_btc_purchases(
+    days: int = 3650,
+    user: dict = Depends(require_auth),
+):
+    del user
+    from_ts = int(time.time()) - days * 86400
+    return await _btc_ledger_get("/purchases", params={"from": from_ts, "limit": 10000})
 
 
 @app.get("/health")

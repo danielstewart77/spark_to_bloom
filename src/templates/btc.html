@@ -10,7 +10,10 @@
           <option value="30">30d</option>
           <option value="90" selected>90d</option>
           <option value="180">180d</option>
-          <option value="365">365d</option>
+          <option value="365">1y</option>
+          <option value="1825">5y</option>
+          <option value="3650">10y</option>
+          <option value="6000">all</option>
         </select>
         <button id="btc-refresh" class="memory-action-btn" type="button">refresh</button>
       </div>
@@ -82,6 +85,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script>
 (function () {
   const TIER_COLOR = {
@@ -152,13 +156,15 @@
 
   async function loadChart(days) {
     try {
-      const [obsResp, alertsResp] = await Promise.all([
+      const [obsResp, alertsResp, purchasesResp] = await Promise.all([
         fetch('/api/btc/observations?days=' + days, { credentials: 'same-origin' }),
         fetch('/api/btc/alerts?days=' + days, { credentials: 'same-origin' }),
+        fetch('/api/btc/purchases?days=' + days, { credentials: 'same-origin' }),
       ]);
       if (!obsResp.ok) return;
       const obs = (await obsResp.json()).slice().sort((a, b) => a.timestamp - b.timestamp);
       const alerts = alertsResp.ok ? (await alertsResp.json()).sort((a, b) => a.timestamp - b.timestamp) : [];
+      const purchases = purchasesResp.ok ? (await purchasesResp.json()) : [];
 
       renderAlerts(alerts);
 
@@ -166,6 +172,15 @@
       const prices = obs.map(o => o.price_usd);
       const ma200 = obs.map(o => o.ma_200d || null);
 
+      // purchases as scatter points — use their own price, no need for obs correlation
+      const purchasePoints = purchases.map(p => ({
+        x: new Date(p.timestamp * 1000),
+        y: p.price_per_btc_usd,
+        amount_usd: p.amount_usd,
+        btc_amount: p.btc_amount,
+      }));
+
+      // alert vertical-line annotations
       const alertAnnotations = {};
       alerts.forEach((a, i) => {
         const color = TIER_COLOR[a.tier] || '#ffffff';
@@ -216,6 +231,18 @@
               yAxisID: 'y',
               spanGaps: true,
             },
+            {
+              label: 'Purchases',
+              type: 'scatter',
+              data: purchasePoints,
+              backgroundColor: 'rgba(74,222,128,0.75)',
+              borderColor: 'rgba(74,222,128,1)',
+              borderWidth: 1,
+              pointStyle: 'circle',
+              radius: 5,
+              hoverRadius: 7,
+              yAxisID: 'y',
+            },
           ],
         },
         options: {
@@ -230,11 +257,16 @@
               bodyColor: '#e7e7de',
               callbacks: {
                 label: ctx => {
+                  if (ctx.dataset.label === 'Purchases') {
+                    const p = ctx.raw;
+                    return 'Buy: $' + Math.round(p.amount_usd).toLocaleString() + ' @ $' + Math.round(p.y).toLocaleString();
+                  }
                   const v = ctx.parsed.y;
                   return ctx.dataset.label + ': ' + (v != null ? '$' + Math.round(v).toLocaleString() : '—');
                 },
               },
             },
+            annotation: { annotations: alertAnnotations },
           },
           scales: {
             x: {

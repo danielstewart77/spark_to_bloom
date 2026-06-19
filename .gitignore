@@ -168,3 +168,6 @@ cert.pem
 # Private planning docs
 backlog/
 linkedin/
+
+# Local demo assets — personal property photos and inspection PDFs, never publish
+src/static/houses/
