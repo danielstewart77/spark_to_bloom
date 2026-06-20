@@ -376,13 +376,6 @@ async def canvas(request: Request):
     return _render_template(request, "canvas.html")
 
 
-@app.get("/real-estate-demo", response_class=HTMLResponse)
-async def real_estate_demo(request: Request):
-    if not get_current_user_from_request(request):
-        return _login_redirect_for(request)
-    return _render_template(request, "real_estate_demo.html")
-
-
 def _backlog_doc_context(doc: str | None, dir: str) -> dict:
     backlog_dir = BASE_DIR / "backlog"
     plans_dir = BASE_DIR / "plans"
