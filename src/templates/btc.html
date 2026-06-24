@@ -172,6 +172,12 @@
       const prices = obs.map(o => o.price_usd);
       const ma200 = obs.map(o => o.ma_200d || null);
 
+      // Tier threshold lines derived from Mayer Multiple * 200d MA
+      const tierOpportunistic = obs.map(o => o.ma_200d ? +(o.ma_200d * 1.00).toFixed(2) : null);
+      const tierStrong        = obs.map(o => o.ma_200d ? +(o.ma_200d * 0.85).toFixed(2) : null);
+      const tierDeepValue     = obs.map(o => o.ma_200d ? +(o.ma_200d * 0.75).toFixed(2) : null);
+      const tierGenerational  = obs.map(o => o.ma_200d ? +(o.ma_200d * 0.65).toFixed(2) : null);
+
       // purchases as scatter points — use their own price, no need for obs correlation
       const purchasePoints = purchases.map(p => ({
         x: new Date(p.timestamp * 1000),
@@ -221,12 +227,45 @@
               yAxisID: 'y',
             },
             {
-              label: '200d MA',
-              data: ma200,
-              borderColor: 'rgba(245,158,11,0.6)',
+              label: '200d MA (opportunistic)',
+              data: tierOpportunistic,
+              borderColor: 'rgba(245,158,11,0.55)',
               borderWidth: 1,
               pointRadius: 0,
               borderDash: [5, 4],
+              tension: 0.1,
+              yAxisID: 'y',
+              spanGaps: true,
+            },
+            {
+              label: 'Strong (0.85×)',
+              data: tierStrong,
+              borderColor: 'rgba(59,130,246,0.55)',
+              borderWidth: 1,
+              pointRadius: 0,
+              borderDash: [4, 4],
+              tension: 0.1,
+              yAxisID: 'y',
+              spanGaps: true,
+            },
+            {
+              label: 'Deep Value (0.75×)',
+              data: tierDeepValue,
+              borderColor: 'rgba(239,68,68,0.7)',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              borderDash: [6, 3],
+              tension: 0.1,
+              yAxisID: 'y',
+              spanGaps: true,
+            },
+            {
+              label: 'Generational (0.65×)',
+              data: tierGenerational,
+              borderColor: 'rgba(168,85,247,0.7)',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              borderDash: [6, 3],
               tension: 0.1,
               yAxisID: 'y',
               spanGaps: true,
