@@ -190,6 +190,37 @@ def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypat
     assert "do the thing" in body
 
 
+def test_terminal_page_has_mobile_session_manager(tmp_path, monkeypatch):
+    """The redesigned page ships the mobile-first list + conversation views."""
+    client = _authed_client(tmp_path, monkeypatch)
+    now = int(__import__("time").time())
+
+    async def fake_gateway_json(path: str, *args, **kwargs):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        if path == "/sessions":
+            return [
+                {"id": "sess-live", "mind_id": "ada-id", "status": "running",
+                 "last_active": now - 5, "summary": "hi"},
+            ]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    # two-view app shell
+    assert 'id="term-app"' in body and 'data-view="list"' in body
+    # session list container + active/archived filter
+    assert 'id="term-list"' in body
+    assert 'id="term-tab-active"' in body and 'id="term-tab-archived"' in body
+    # engage/disengage: a back control returns from a conversation to the list
+    assert 'id="term-back"' in body
+    # server-rendered data seed still carries the session (JS builds cards from it)
+    assert 'value="session:sess-live"' in body
+
+
 def test_api_terminal_tts_proxies_to_voice_server(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
     monkeypatch.setenv("VOICE_API_URL", "http://hive-mind-voice:8422")

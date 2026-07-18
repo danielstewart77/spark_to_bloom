@@ -1,54 +1,86 @@
 {% extends "layout.html" %}
 {% block content %}
 <main class="terminal-page">
-    <div class="term-shell">
-        <div class="term-topbar">
-            <select id="mind-select" class="term-mind-select" aria-label="active sessions">
-                {% for mind in selector_minds %}
-                <optgroup label="{{ mind.name }} · {{ mind.id[:8] }}">
-                    <option value="new:{{ mind.id }}"
-                            data-action="new"
-                            data-mind-id="{{ mind.id }}"
-                            data-mind-name="{{ mind.name }}">— new session for {{ mind.name }} —</option>
-                    {% for session in mind.sessions %}
-                    <option value="session:{{ session.id }}"
-                            data-action="load"
-                            data-session-id="{{ session.id }}"
-                            data-mind-id="{{ mind.id }}"
-                            data-mind-name="{{ mind.name }}"
-                            data-status="{{ session.status }}"
-                            data-last-active="{{ session.last_active }}"
-                            data-summary="{{ session.summary }}">{{ mind.name }} · {{ session.short_id }} · {{ session.status }} · {{ session.age }}{% if session.summary %} · {{ session.summary[:48] }}{% endif %}</option>
-                    {% endfor %}
-                </optgroup>
-                {% endfor %}
-            </select>
-            <span id="term-session-info" class="term-session-info">no session</span>
-            <button id="term-new-session" class="term-action-btn" type="button">new session</button>
-            <button id="term-delete-session" class="term-action-btn term-action-btn-danger" type="button" title="delete selected session" hidden>delete</button>
-            <button id="term-speaker-btn" class="term-action-btn" type="button" title="toggle Skippy voice playback" aria-pressed="false">speaker off</button>
-            <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
-        </div>
-        <div id="term-feed" class="term-feed" aria-live="polite"></div>
-        <form id="term-input-form" class="term-input-bar" autocomplete="off">
-            <span class="term-prompt">&gt;</span>
-            <textarea id="term-input" class="term-input" rows="1" placeholder="type a message…" aria-label="message" autofocus></textarea>
-            <button id="term-mic-btn" type="button" class="term-send-btn" title="hold or toggle to dictate" hidden>mic</button>
-            <button type="submit" class="term-send-btn">send</button>
-        </form>
+    <!-- Server-rendered data seed + no-JS fallback. Hidden; the mobile UI below is
+         built from this (and refreshed from /api/terminal/selector). -->
+    <select id="mind-select" class="term-ssr-seed" hidden aria-hidden="true" tabindex="-1">
+        {% for mind in selector_minds %}
+        <optgroup label="{{ mind.name }} · {{ mind.id[:8] }}">
+            <option value="new:{{ mind.id }}"
+                    data-action="new"
+                    data-mind-id="{{ mind.id }}"
+                    data-mind-name="{{ mind.name }}">— new session for {{ mind.name }} —</option>
+            {% for session in mind.sessions %}
+            <option value="session:{{ session.id }}"
+                    data-action="load"
+                    data-session-id="{{ session.id }}"
+                    data-mind-id="{{ mind.id }}"
+                    data-mind-name="{{ mind.name }}"
+                    data-status="{{ session.status }}"
+                    data-short-id="{{ session.short_id }}"
+                    data-age="{{ session.age }}"
+                    data-last-active="{{ session.last_active }}"
+                    data-summary="{{ session.summary }}">{{ mind.name }} · {{ session.short_id }} · {{ session.status }} · {{ session.age }}{% if session.summary %} · {{ session.summary[:48] }}{% endif %}</option>
+            {% endfor %}
+        </optgroup>
+        {% endfor %}
+    </select>
+
+    <div class="term-app" id="term-app" data-view="list">
+        <!-- ── Sessions list (the "agents" list) ───────────────────── -->
+        <section class="term-list-view" id="term-list-view">
+            <header class="term-list-head">
+                <h1 class="term-list-title">Agents</h1>
+                <div class="term-seg" role="tablist" aria-label="session filter">
+                    <button id="term-tab-active" class="term-seg-btn is-active" type="button"
+                            role="tab" aria-selected="true" data-filter="active">Active</button>
+                    <button id="term-tab-archived" class="term-seg-btn" type="button"
+                            role="tab" aria-selected="false" data-filter="archived">Archived</button>
+                </div>
+                <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
+            </header>
+            <div id="term-list" class="term-list" aria-live="polite"></div>
+            <p id="term-list-empty" class="term-list-empty" hidden>No sessions.</p>
+        </section>
+
+        <!-- ── Conversation (engaged session) ──────────────────────── -->
+        <section class="term-convo-view" id="term-convo-view">
+            <header class="term-convo-head">
+                <button id="term-back" class="term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹ sessions</button>
+                <span id="term-session-info" class="term-session-info">no session</span>
+                <button id="term-speaker-btn" class="term-action-btn" type="button" title="toggle Skippy voice playback" aria-pressed="false">speaker off</button>
+                <button id="term-delete-session" class="term-action-btn term-action-btn-danger" type="button" title="delete this session" hidden>delete</button>
+            </header>
+            <div id="term-feed" class="term-feed" aria-live="polite"></div>
+            <form id="term-input-form" class="term-input-bar" autocomplete="off">
+                <span class="term-prompt">&gt;</span>
+                <textarea id="term-input" class="term-input" rows="1" placeholder="type a message…" aria-label="message"></textarea>
+                <button id="term-mic-btn" type="button" class="term-send-btn" title="hold or toggle to dictate" hidden>mic</button>
+                <button type="submit" class="term-send-btn">send</button>
+            </form>
+        </section>
     </div>
 </main>
 
 <script>
 (function () {
+    const termApp = document.getElementById("term-app");
     const feed = document.getElementById("term-feed");
     const form = document.getElementById("term-input-form");
     const input = document.getElementById("term-input");
     const mindSelect = document.getElementById("mind-select");
     const sessionInfo = document.getElementById("term-session-info");
-    const newSessionBtn = document.getElementById("term-new-session");
     const deleteSessionBtn = document.getElementById("term-delete-session");
     const refreshBtn = document.getElementById("term-refresh");
+    const listEl = document.getElementById("term-list");
+    const listEmpty = document.getElementById("term-list-empty");
+    const backBtn = document.getElementById("term-back");
+    const tabActive = document.getElementById("term-tab-active");
+    const tabArchived = document.getElementById("term-tab-archived");
+
+    const ACTIVE_STATUSES = new Set(["running", "idle"]);
+    let currentFilter = "active";
+    let lastMinds = [];
 
     let currentSessionId = null;
     let currentMindId = null;
@@ -64,6 +96,9 @@
     let pendingPill = null;
     let assistantDoneTimer = null;
     const ASSISTANT_IDLE_MS = 1500;
+    const isWide = () => window.matchMedia("(min-width: 860px)").matches;
+
+    function showView(name) { termApp.dataset.view = name; }
 
     async function flushQueuedMessage() {
         if (!pendingUserText || !currentSessionId) return;
@@ -143,7 +178,6 @@
     function handleEvent(event) {
         if (event.type === "assistant") {
             inFlight = true;
-            // If a pending user message is waiting without a pill yet, add it now
             if (pendingUserEl && !pendingPill) {
                 const pill = document.createElement("button");
                 pill.type = "button";
@@ -155,10 +189,7 @@
             }
             const chunk = extractText(event);
             if (!chunk) return;
-            if (!currentAssistantEl) {
-                const mindName = mindSelect.selectedOptions[0] && mindSelect.selectedOptions[0].dataset.mindName;
-                startAssistantLine(mindName);
-            }
+            if (!currentAssistantEl) startAssistantLine(currentMindName);
             appendAssistantChunk(chunk);
             ttsAccumulate(chunk);
             scheduleTtsFlush();
@@ -166,7 +197,6 @@
         } else if (event.type === "user") {
             const text = extractText(event);
             if (pendingUserEl && text === pendingUserText) {
-                // Server confirmed our pending message — undim it
                 pendingUserEl.classList.remove("term-pending");
                 if (pendingPill) { pendingPill.remove(); pendingPill = null; }
                 pendingUserEl = null;
@@ -261,7 +291,7 @@
                     return;
                 }
             } catch(err) { /* fall through */ }
-            appendLine("term-system", "reattach failed — pick a session above to retry");
+            appendLine("term-system", "reattach failed — go back and pick a session to retry");
             return;
         }
         reattachTimer = setTimeout(pollForSuccessor, 2000);
@@ -273,7 +303,7 @@
         appendLine("term-system", "reattached to " + (session.id || "").slice(0, 8));
         currentSessionId = session.id;
         currentMindId = session.mind_id || currentMindId;
-        sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + (session.status || "running");
+        sessionInfo.textContent = (currentMindName || (session.mind_id || "").slice(0, 8)) + " · " + (session.status || "running");
         rememberSession(session.id);
         connectStream(session.id);
         refreshSelector(session.id);
@@ -292,9 +322,9 @@
         sessionWasClosed = false;
         currentSessionId = session.id;
         currentMindId = session.mind_id || currentMindId;
-        const opt = selectedOption();
-        if (opt && opt.dataset.mindName) currentMindName = opt.dataset.mindName;
-        sessionInfo.textContent = (session.mind_id || "").slice(0, 8) + " · " + session.status;
+        if (session.mind_name) currentMindName = session.mind_name;
+        sessionInfo.textContent = (currentMindName || (session.mind_id || "").slice(0, 8)) + " · " + (session.status || "running");
+        deleteSessionBtn.hidden = false;
         feed.innerHTML = "";
         currentAssistantEl = null;
         inFlight = false;
@@ -321,9 +351,7 @@
                         feed.scrollTop = feed.scrollHeight;
                     }
                 }
-                if (msgs.length > 0) {
-                    appendLine("term-system", "— history · live below —");
-                }
+                if (msgs.length > 0) appendLine("term-system", "— history · live below —");
             }
         } catch(e) { /* swallow — history is optional */ }
 
@@ -331,43 +359,101 @@
             appendLine("term-system", "context: " + session.summary);
         }
         connectStream(session.id);
+    }
+
+    // ── engage / disengage ────────────────────────────────────────
+    function engage(card) {
+        setSession({
+            id: card.dataset.sessionId,
+            mind_id: card.dataset.mindId,
+            mind_name: card.dataset.mindName,
+            status: card.dataset.status || "running",
+            summary: card.dataset.summary || "",
+        });
+        showView("convo");
+        renderCards(lastMinds);   // refresh is-current highlight
         input.focus();
     }
 
-    function selectedOption() {
-        return mindSelect.selectedOptions[0] || null;
+    function disengage() {
+        disconnectStream();
+        cancelReattachLoop();
+        cancelAssistantDone();
+        inFlight = false;
+        pendingUserEl = null; pendingUserText = null; pendingPill = null;
+        showView("list");
+        refreshSelector();
+    }
+    backBtn.addEventListener("click", disengage);
+
+    // ── session list rendering ────────────────────────────────────
+    function isActiveStatus(status) {
+        return ACTIVE_STATUSES.has((status || "").toLowerCase());
+    }
+    function statusDotClass(status) {
+        const s = (status || "").toLowerCase();
+        if (s === "running") return "is-running";
+        if (s === "idle") return "is-idle";
+        return "is-closed";
     }
 
-    function selectedMindId() {
-        const opt = selectedOption();
-        return (opt && opt.dataset.mindId) || "";
-    }
+    function renderCards(minds) {
+        lastMinds = minds || [];
+        listEl.innerHTML = "";
+        let count = 0;
+        lastMinds.forEach(function(mind) {
+            const sessions = (mind.sessions || []).filter(function(s) {
+                const active = isActiveStatus(s.status);
+                return currentFilter === "active" ? active : !active;
+            });
+            if (!sessions.length) return;
+            const group = document.createElement("div");
+            group.className = "term-mind-group";
+            group.textContent = mind.name;
+            listEl.appendChild(group);
+            sessions.forEach(function(s) {
+                const card = document.createElement("button");
+                card.type = "button";
+                card.className = "term-card" + (s.id === currentSessionId ? " is-current" : "");
+                card.dataset.sessionId = s.id;
+                card.dataset.mindId = mind.id;
+                card.dataset.mindName = mind.name;
+                card.dataset.status = s.status || "";
+                card.dataset.summary = s.summary || "";
 
-    function attachSessionFromOption(opt) {
-        const sessionObj = {
-            id: opt.dataset.sessionId,
-            mind_id: opt.dataset.mindId,
-            status: opt.dataset.status || "running",
-            summary: opt.dataset.summary || "",
-            last_active: opt.dataset.lastActive || "",
-        };
-        setSession(sessionObj);
-    }
+                const dot = document.createElement("span");
+                dot.className = "term-card-dot " + statusDotClass(s.status);
 
-    async function createSession(mindId) {
-        if (!mindId) { appendLine("term-system", "no mind selected"); return; }
-        const resp = await fetch("/api/terminal/session", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({mind_id: mindId}),
+                const body = document.createElement("span");
+                body.className = "term-card-body";
+                const title = document.createElement("span");
+                title.className = "term-card-title";
+                title.innerHTML = '<span class="term-card-name"></span> <span class="term-card-id"></span>';
+                title.querySelector(".term-card-name").textContent = mind.name;
+                title.querySelector(".term-card-id").textContent = s.short_id || (s.id || "").slice(0, 8);
+                const meta = document.createElement("span");
+                meta.className = "term-card-meta";
+                meta.textContent = (s.status || "") + (s.age ? " · " + s.age : "");
+                body.appendChild(title);
+                body.appendChild(meta);
+                if (s.summary) {
+                    const sum = document.createElement("span");
+                    sum.className = "term-card-summary";
+                    sum.textContent = s.summary;
+                    body.appendChild(sum);
+                }
+
+                card.appendChild(dot);
+                card.appendChild(body);
+                card.addEventListener("click", function() { engage(card); });
+                listEl.appendChild(card);
+                count += 1;
+            });
         });
-        if (!resp.ok) { appendLine("term-system", "error creating session"); return; }
-        const session = await resp.json();
-        feed.innerHTML = "";
-        currentAssistantEl = null;
-        setSession(session);
-        await refreshSelector(session.id);
+        listEmpty.hidden = count > 0;
+        listEmpty.textContent = currentFilter === "active"
+            ? "No active sessions."
+            : "No archived sessions.";
     }
 
     async function refreshSelector(preserveSessionId) {
@@ -380,9 +466,9 @@
     }
 
     function rebuildSelector(minds, preserveSessionId) {
-        const previousValue = mindSelect.value;
+        // keep the hidden seed select in sync (no-JS fallback + reattach source)
         mindSelect.innerHTML = "";
-        minds.forEach(function(mind) {
+        (minds || []).forEach(function(mind) {
             const group = document.createElement("optgroup");
             group.label = mind.name + " · " + (mind.id || "").slice(0, 8);
             const newOpt = document.createElement("option");
@@ -400,85 +486,63 @@
                 opt.dataset.mindId = mind.id;
                 opt.dataset.mindName = mind.name;
                 opt.dataset.status = s.status || "";
-                opt.dataset.lastActive = s.last_active || "";
                 opt.dataset.summary = s.summary || "";
-                const summaryPart = s.summary ? " · " + s.summary.slice(0, 48) : "";
-                opt.textContent = mind.name + " · " + s.short_id + " · " + s.status + " · " + s.age + summaryPart;
+                opt.textContent = mind.name + " · " + s.short_id + " · " + s.status + " · " + s.age;
                 group.appendChild(opt);
             });
             mindSelect.appendChild(group);
         });
-        const targetValue = preserveSessionId
-            ? "session:" + preserveSessionId
-            : previousValue;
-        const found = Array.from(mindSelect.options).find(o => o.value === targetValue);
-        if (found) {
-            mindSelect.value = targetValue;
-        }
+        void preserveSessionId;
+        renderCards(minds || []);
     }
 
-    function updateDeleteBtn() {
-        const opt = selectedOption();
-        if (deleteSessionBtn) {
-            deleteSessionBtn.hidden = !(opt && opt.dataset.action === "load" && opt.dataset.sessionId);
-        }
+    // ── filter tabs ───────────────────────────────────────────────
+    function setFilter(filter) {
+        currentFilter = filter;
+        const activeSel = filter === "active";
+        tabActive.classList.toggle("is-active", activeSel);
+        tabArchived.classList.toggle("is-active", !activeSel);
+        tabActive.setAttribute("aria-selected", activeSel ? "true" : "false");
+        tabArchived.setAttribute("aria-selected", activeSel ? "false" : "true");
+        renderCards(lastMinds);
     }
+    tabActive.addEventListener("click", function() { setFilter("active"); });
+    tabArchived.addEventListener("click", function() { setFilter("archived"); });
 
-    mindSelect.addEventListener("change", function() {
-        const opt = selectedOption();
-        updateDeleteBtn();
-        if (!opt) return;
-        if (opt.dataset.action === "new") {
-            createSession(opt.dataset.mindId);
-        } else if (opt.dataset.action === "load" && opt.dataset.sessionId) {
-            attachSessionFromOption(opt);
-        }
-    });
+    if (refreshBtn) refreshBtn.addEventListener("click", function() { refreshSelector(); });
 
-    if (deleteSessionBtn) {
-        deleteSessionBtn.addEventListener("click", async function() {
-            const opt = selectedOption();
-            if (!opt || !opt.dataset.sessionId) return;
-            const sessionId = opt.dataset.sessionId;
-            if (!confirm("Delete this session? This cannot be undone.")) return;
-            deleteSessionBtn.disabled = true;
-            deleteSessionBtn.textContent = "deleting…";
-            try {
-                const resp = await fetch("/api/terminal/session/" + sessionId, {
-                    method: "DELETE",
-                    credentials: "same-origin",
-                });
-                if (!resp.ok) {
-                    let msg = "HTTP " + resp.status;
-                    try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch {}
-                    appendLine("term-system", "delete failed: " + msg);
-                } else {
-                    if (currentSessionId === sessionId) {
-                        disconnectStream();
-                        cancelReattachLoop();
-                        currentSessionId = null;
-                        feed.innerHTML = "";
-                        sessionInfo.textContent = "no session";
-                    }
-                    await refreshSelector();
-                    updateDeleteBtn();
-                }
-            } catch(err) {
-                appendLine("term-system", "delete error: " + err.message);
-            } finally {
-                deleteSessionBtn.disabled = false;
-                deleteSessionBtn.textContent = "delete";
+    deleteSessionBtn.addEventListener("click", async function() {
+        if (!currentSessionId) return;
+        if (!confirm("Delete this session? This cannot be undone.")) return;
+        const sessionId = currentSessionId;
+        deleteSessionBtn.disabled = true;
+        deleteSessionBtn.textContent = "deleting…";
+        try {
+            const resp = await fetch("/api/terminal/session/" + sessionId, {
+                method: "DELETE",
+                credentials: "same-origin",
+            });
+            if (!resp.ok) {
+                let msg = "HTTP " + resp.status;
+                try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch {}
+                appendLine("term-system", "delete failed: " + msg);
+            } else {
+                disconnectStream();
+                cancelReattachLoop();
+                currentSessionId = null;
+                feed.innerHTML = "";
+                sessionInfo.textContent = "no session";
+                deleteSessionBtn.hidden = true;
+                showView("list");
+                await refreshSelector();
             }
-        });
-    }
-
-    newSessionBtn.addEventListener("click", function() {
-        createSession(selectedMindId());
+        } catch(err) {
+            appendLine("term-system", "delete error: " + err.message);
+        } finally {
+            deleteSessionBtn.disabled = false;
+            deleteSessionBtn.textContent = "delete";
+        }
     });
-
-    if (refreshBtn) {
-        refreshBtn.addEventListener("click", function() { refreshSelector(); });
-    }
 
     function autoGrowInput() {
         input.style.height = "auto";
@@ -536,7 +600,6 @@
 
         const wasInFlight = inFlight;
 
-        // Show message immediately (dimmed until server echoes it back)
         if (!pendingUserEl) {
             const lineEl = document.createElement("div");
             lineEl.className = "term-line term-user term-pending";
@@ -556,8 +619,6 @@
             pendingUserText = text;
         }
 
-        // If a response is in flight, hold the text — the interrupt pill will
-        // dispatch it as the next turn. Otherwise send it now.
         if (wasInFlight) return;
 
         try {
@@ -745,20 +806,53 @@
         });
     }
 
-    // Boot: prefer the session we stored last time (if still in the list), else first load entry.
-    const loadOptions = Array.from(mindSelect.options).filter(o => o.dataset.action === "load");
-    const remembered = recalledSession();
-    const rememberedOpt = remembered
-        ? loadOptions.find(o => o.dataset.sessionId === remembered)
-        : null;
-    if (rememberedOpt) {
-        mindSelect.value = rememberedOpt.value;
-        attachSessionFromOption(rememberedOpt);
-    } else if (loadOptions.length > 0) {
-        mindSelect.value = loadOptions[0].value;
-        attachSessionFromOption(loadOptions[0]);
-    } else if (mindSelect.options.length > 0) {
-        sessionInfo.textContent = "no active sessions — pick a mind and click new session";
+    // ── boot: build the initial list from the SSR seed, then refresh live ──
+    function mindsFromSeed() {
+        const groups = Array.from(mindSelect.querySelectorAll("optgroup"));
+        return groups.map(function(g) {
+            const opts = Array.from(g.querySelectorAll('option[data-action="load"]'));
+            const first = g.querySelector('option[data-action="new"]');
+            return {
+                id: (first && first.dataset.mindId) || (opts[0] && opts[0].dataset.mindId) || "",
+                name: (first && first.dataset.mindName) || (opts[0] && opts[0].dataset.mindName) || "mind",
+                sessions: opts.map(function(o) {
+                    return {
+                        id: o.dataset.sessionId,
+                        short_id: o.dataset.shortId || (o.dataset.sessionId || "").slice(0, 8),
+                        status: o.dataset.status || "",
+                        age: o.dataset.age || "",
+                        last_active: o.dataset.lastActive || "",
+                        summary: o.dataset.summary || "",
+                    };
+                }),
+            };
+        });
+    }
+
+    showView("list");
+    renderCards(mindsFromSeed());
+    refreshSelector();
+
+    // On a wide screen, auto-engage the remembered (or most recent active) session
+    // so the two-pane desktop layout isn't empty. Mobile lands on the list.
+    if (isWide()) {
+        const seed = mindsFromSeed();
+        let target = null;
+        const remembered = recalledSession();
+        seed.forEach(function(m) {
+            (m.sessions || []).forEach(function(s) {
+                if (!isActiveStatus(s.status)) return;
+                if (remembered && s.id === remembered) target = {m: m, s: s};
+                else if (!target) target = {m: m, s: s};
+            });
+        });
+        if (target) {
+            setSession({
+                id: target.s.id, mind_id: target.m.id, mind_name: target.m.name,
+                status: target.s.status, summary: target.s.summary,
+            });
+            showView("convo");
+        }
     }
 })();
 </script>
