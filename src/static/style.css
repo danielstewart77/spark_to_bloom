@@ -785,9 +785,8 @@ nav ul li.user-controls {
     overflow: hidden;
 }
 
-/* On phones, exactly one view is visible at a time. */
-.term-app[data-view="list"] .term-convo-view { display: none; }
-.term-app[data-view="convo"] .term-list-view { display: none; }
+/* Single-view switching is phone-only; see the max-width block below.
+   On desktop both panes stay visible, so these must NOT apply there. */
 
 /* ── session list view ──────────────────────────────── */
 .term-list-view {
@@ -1081,8 +1080,6 @@ nav ul li.user-controls {
 /* Desktop: show both panes side by side; list becomes a fixed left rail. */
 @media (min-width: 860px) {
     .term-app { height: calc(100dvh - 150px); }
-    .term-app .term-list-view,
-    .term-app .term-convo-view { display: flex; }
     .term-list-view {
         width: 340px;
         flex-shrink: 0;
@@ -1092,9 +1089,11 @@ nav ul li.user-controls {
     #term-back { display: none; }
 }
 
-/* Phones: full-bleed shell and comfortable touch targets. */
+/* Phones: full-bleed shell, one view at a time, comfortable touch targets. */
 @media (max-width: 859px) {
     .terminal-page { padding: 0; }
+    .term-app[data-view="list"] .term-convo-view { display: none; }
+    .term-app[data-view="convo"] .term-list-view { display: none; }
     .term-app {
         height: 100dvh;
         max-width: 100%;
