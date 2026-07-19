@@ -1119,9 +1119,31 @@ nav ul li.user-controls {
     text-shadow: 0 0 6px rgba(201, 76, 76, 0.6);
 }
 
+/* Terminal page fills the viewport under the (retained) nav bar; the personal
+   intro banner and empty footer are hidden here so only the app shows. The
+   flex column means no magic-number height math and nothing but the feed
+   scrolls. Scoped to the terminal page so other pages are untouched. */
+body:has(.terminal-page) {
+    overflow: hidden;
+    height: 100dvh;
+    margin-bottom: 0;
+}
+body:has(.terminal-page) .content-wrapper {
+    padding: 0;
+    height: calc(100dvh - var(--nav-h));
+    display: flex;
+    flex-direction: column;
+}
+body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
+body:has(.terminal-page) .terminal-page {
+    flex: 1;
+    min-height: 0;
+    padding: 1rem;
+}
+body:has(.terminal-page) .term-app { height: 100%; }
+
 /* Desktop: rail + stage side by side; rail is a collapsible left column. */
 @media (min-width: 860px) {
-    .term-app { height: calc(100dvh - 150px); }
     .term-list-view {
         width: 340px;
         flex-shrink: 0;
@@ -1179,16 +1201,13 @@ nav ul li.user-controls {
 }
 .term-new-menu-item:hover { border-color: #c9a84c; color: #dce8f0; }
 
-/* Phones: full-bleed shell, one view at a time, single-panel grid, banner
-   hidden, and NOTHING scrolls except the chat feed (and the session list). */
+/* Phones: full-bleed shell, one view at a time, single-panel grid, and NOTHING
+   scrolls except the chat feed (and the session list). Nav bar stays. */
 @media (max-width: 859px) {
-    body:has(.terminal-page) { overflow: hidden; }
-    body:has(.terminal-page) nav { display: none; }
-    .terminal-page { padding: 0; height: 100dvh; overflow: hidden; }
+    body:has(.terminal-page) .terminal-page { padding: 0; }
     .term-app[data-view="list"] .term-stage { display: none; }
     .term-app[data-view="stage"] .term-list-view { display: none; }
     .term-app {
-        height: 100dvh;
         max-width: 100%;
         border: none;
         border-radius: 0;

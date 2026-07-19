@@ -223,6 +223,20 @@ def test_terminal_page_has_mobile_session_manager(tmp_path, monkeypatch):
     assert 'value="session:sess-live"' in body
 
 
+def test_terminal_css_hides_intro_banner_not_nav():
+    """The terminal page hides the personal intro banner but keeps the nav bar."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+    # intro/footer terminal-box is hidden on the terminal page
+    assert "body:has(.terminal-page) .content-wrapper > .terminal-box" in css
+    # the nav bar must NOT be hidden on the terminal page (regression guard)
+    assert "body:has(.terminal-page) nav { display: none" not in css
+    assert "body:has(.terminal-page) nav{display:none" not in css
+
+
 def test_terminal_page_has_new_session_and_collapsible_rail(tmp_path, monkeypatch):
     """New-session spawn is back, and the agents rail is collapsible."""
     client = _authed_client(tmp_path, monkeypatch)
