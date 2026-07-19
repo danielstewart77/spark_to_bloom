@@ -1020,6 +1020,8 @@ nav ul li.user-controls {
     border-bottom: 1px solid #1e2d3d;
     flex-shrink: 0;
 }
+/* same display:flex-beats-[hidden] issue as .term-grid-empty above */
+.term-rename-pop[hidden] { display: none; }
 .term-rename-input {
     flex: 1;
     min-width: 120px;
