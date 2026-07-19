@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <main class="terminal-page">
-    <!-- Server-rendered data seed + no-JS fallback. Hidden; the mobile UI below is
+    <!-- Server-rendered data seed + no-JS fallback. Hidden; the UI below is
          built from this (and refreshed from /api/terminal/selector). -->
     <select id="mind-select" class="term-ssr-seed" hidden aria-hidden="true" tabindex="-1">
         {% for mind in selector_minds %}
@@ -26,10 +26,12 @@
         {% endfor %}
     </select>
 
-    <div class="term-app" id="term-app" data-view="list">
-        <!-- ── Sessions list (the "agents" list) ───────────────────── -->
+    <div class="term-app" id="term-app" data-view="list" data-rail="expanded">
+        <!-- ── Sessions list (the "agents" rail) ────────────────────── -->
         <section class="term-list-view" id="term-list-view">
             <header class="term-list-head">
+                <button id="term-rail-collapse" class="term-icon-btn term-rail-btn" type="button"
+                        title="collapse agents sidebar" aria-label="collapse agents sidebar">«</button>
                 <h1 class="term-list-title">Agents</h1>
                 <div class="term-seg" role="tablist" aria-label="session filter">
                     <button id="term-tab-active" class="term-seg-btn is-active" type="button"
@@ -37,27 +39,20 @@
                     <button id="term-tab-archived" class="term-seg-btn" type="button"
                             role="tab" aria-selected="false" data-filter="archived">Archived</button>
                 </div>
+                <button id="term-new" class="term-action-btn" type="button" title="start a new session">+ new</button>
                 <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
             </header>
+            <div id="term-new-menu" class="term-new-menu" hidden aria-label="pick a mind"></div>
             <div id="term-list" class="term-list" aria-live="polite"></div>
             <p id="term-list-empty" class="term-list-empty" hidden>No sessions.</p>
         </section>
 
-        <!-- ── Conversation (engaged session) ──────────────────────── -->
-        <section class="term-convo-view" id="term-convo-view">
-            <header class="term-convo-head">
-                <button id="term-back" class="term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹ sessions</button>
-                <span id="term-session-info" class="term-session-info">no session</span>
-                <button id="term-speaker-btn" class="term-action-btn" type="button" title="toggle Skippy voice playback" aria-pressed="false">speaker off</button>
-                <button id="term-delete-session" class="term-action-btn term-action-btn-danger" type="button" title="delete this session" hidden>delete</button>
-            </header>
-            <div id="term-feed" class="term-feed" aria-live="polite"></div>
-            <form id="term-input-form" class="term-input-bar" autocomplete="off">
-                <span class="term-prompt">&gt;</span>
-                <textarea id="term-input" class="term-input" rows="1" placeholder="type a message…" aria-label="message"></textarea>
-                <button id="term-mic-btn" type="button" class="term-send-btn" title="hold or toggle to dictate" hidden>mic</button>
-                <button type="submit" class="term-send-btn">send</button>
-            </form>
+        <!-- ── Stage: the Brady-Bunch grid of open sessions ─────────── -->
+        <section class="term-stage" id="term-stage">
+            <button id="term-rail-expand" class="term-rail-expand" type="button" hidden
+                    title="show agents sidebar" aria-label="show agents sidebar">agents »</button>
+            <div id="term-grid" class="term-grid" data-count="0"></div>
+            <p id="term-grid-empty" class="term-grid-empty">Select a session from the list to open it here.</p>
         </section>
     </div>
 </main>
@@ -65,99 +60,31 @@
 <script>
 (function () {
     const termApp = document.getElementById("term-app");
-    const feed = document.getElementById("term-feed");
-    const form = document.getElementById("term-input-form");
-    const input = document.getElementById("term-input");
     const mindSelect = document.getElementById("mind-select");
-    const sessionInfo = document.getElementById("term-session-info");
-    const deleteSessionBtn = document.getElementById("term-delete-session");
-    const refreshBtn = document.getElementById("term-refresh");
     const listEl = document.getElementById("term-list");
     const listEmpty = document.getElementById("term-list-empty");
-    const backBtn = document.getElementById("term-back");
+    const gridEl = document.getElementById("term-grid");
+    const gridEmpty = document.getElementById("term-grid-empty");
+    const refreshBtn = document.getElementById("term-refresh");
+    const newBtn = document.getElementById("term-new");
+    const newMenu = document.getElementById("term-new-menu");
     const tabActive = document.getElementById("term-tab-active");
     const tabArchived = document.getElementById("term-tab-archived");
+    const railCollapseBtn = document.getElementById("term-rail-collapse");
+    const railExpandBtn = document.getElementById("term-rail-expand");
 
     const ACTIVE_STATUSES = new Set(["running", "idle"]);
-    let currentFilter = "active";
-    let lastMinds = [];
-
-    let currentSessionId = null;
-    let currentMindId = null;
-    let currentMindName = null;
-    let eventSource = null;
-    let currentAssistantEl = null;
-    let reattachTimer = null;
-    let reattachStartedAt = 0;
-    let sessionWasClosed = false;
-    let inFlight = false;
-    let pendingUserText = null;
-    let pendingUserEl = null;
-    let pendingPill = null;
-    let assistantDoneTimer = null;
     const ASSISTANT_IDLE_MS = 1500;
     const isWide = () => window.matchMedia("(min-width: 860px)").matches;
 
-    function showView(name) { termApp.dataset.view = name; }
+    let currentFilter = "active";
+    let lastMinds = [];
 
-    async function flushQueuedMessage() {
-        if (!pendingUserText || !currentSessionId) return;
-        const textToSend = pendingUserText;
-        const elToSend = pendingUserEl;
-        pendingUserEl = null; pendingUserText = null;
-        if (pendingPill) { pendingPill.remove(); pendingPill = null; }
-        if (elToSend) elToSend.classList.remove("term-pending");
-        try {
-            await fetch("/api/console/" + currentSessionId + "/message", {
-                method: "POST",
-                credentials: "same-origin",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({text: textToSend}),
-            });
-        } catch(err) {
-            appendLine("term-system", "send error: " + err.message);
-        }
-    }
+    // sessionId -> panel. The panels currently mounted in the grid.
+    const openPanels = new Map();
+    let focusedPanel = null;
 
-    function scheduleAssistantDone() {
-        if (assistantDoneTimer) clearTimeout(assistantDoneTimer);
-        assistantDoneTimer = setTimeout(function() {
-            assistantDoneTimer = null;
-            inFlight = false;
-            currentAssistantEl = null;
-            flushQueuedMessage();
-        }, ASSISTANT_IDLE_MS);
-    }
-
-    function cancelAssistantDone() {
-        if (assistantDoneTimer) { clearTimeout(assistantDoneTimer); assistantDoneTimer = null; }
-    }
-
-    function appendLine(cls, text) {
-        currentAssistantEl = null;
-        const el = document.createElement("div");
-        el.className = "term-line " + cls;
-        el.textContent = text;
-        feed.appendChild(el);
-        feed.scrollTop = feed.scrollHeight;
-        return el;
-    }
-
-    function startAssistantLine(mindName) {
-        currentAssistantEl = document.createElement("div");
-        currentAssistantEl.className = "term-line term-assistant";
-        currentAssistantEl.dataset.prefix = (mindName || "ada") + " > ";
-        currentAssistantEl.textContent = currentAssistantEl.dataset.prefix;
-        feed.appendChild(currentAssistantEl);
-        feed.scrollTop = feed.scrollHeight;
-    }
-
-    function appendAssistantChunk(text) {
-        if (!currentAssistantEl) return;
-        currentAssistantEl.textContent += text;
-        feed.scrollTop = feed.scrollHeight;
-    }
-
+    // ── shared content helpers ────────────────────────────────────
     function flattenContent(v) {
         if (v == null) return "";
         if (typeof v === "string") return v;
@@ -175,221 +102,592 @@
         return flattenContent(v);
     }
 
-    function handleEvent(event) {
-        if (event.type === "assistant") {
-            inFlight = true;
-            if (pendingUserEl && !pendingPill) {
-                const pill = document.createElement("button");
-                pill.type = "button";
-                pill.className = "term-interrupt-pill";
-                pill.textContent = "interrupt";
-                pill.addEventListener("click", function() { doInterrupt(pill); });
-                pendingUserEl.appendChild(pill);
-                pendingPill = pill;
-            }
-            const chunk = extractText(event);
-            if (!chunk) return;
-            if (!currentAssistantEl) startAssistantLine(currentMindName);
-            appendAssistantChunk(chunk);
-            ttsAccumulate(chunk);
-            scheduleTtsFlush();
-            scheduleAssistantDone();
-        } else if (event.type === "user") {
-            const text = extractText(event);
-            if (pendingUserEl && text === pendingUserText) {
-                pendingUserEl.classList.remove("term-pending");
-                if (pendingPill) { pendingPill.remove(); pendingPill = null; }
-                pendingUserEl = null;
-                pendingUserText = null;
+    // ── shared mic controller (one recognition, aimed at the panel that started it) ──
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micSupported = !!SpeechRecognitionCtor;
+    let recognition = null;
+    let micTarget = null;      // the panel currently dictating
+    let micFinalText = "";
+
+    function stopMic() {
+        if (!recognition) return;
+        const t = micTarget;
+        micTarget = null;
+        try { recognition.stop(); } catch (e) {}
+        if (t) t.setMicLabel("off");
+    }
+    function startMic(panel) {
+        if (!micSupported) return;
+        if (micTarget && micTarget !== panel) stopMic();
+        if (!recognition) {
+            recognition = new SpeechRecognitionCtor();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = (navigator.language || "en-US");
+            recognition.onresult = function (event) {
+                if (!micTarget) return;
+                let finalText = "";
+                let interim = "";
+                for (let i = 0; i < event.results.length; i++) {
+                    const res = event.results[i];
+                    const transcript = res[0] && res[0].transcript ? res[0].transcript : "";
+                    if (res.isFinal) finalText += (finalText ? " " : "") + transcript.trim();
+                    else interim += transcript;
+                }
+                const preserved = micFinalText ? micFinalText + " " : "";
+                micTarget.setInputValue((preserved + finalText + " " + interim).replace(/\s+/g, " ").trim());
+            };
+            recognition.onerror = function () {
+                if (micTarget) micTarget.setMicLabel("error");
+                micTarget = null;
+            };
+            recognition.onend = function () {
+                if (micTarget) {
+                    micFinalText = micTarget.getInputValue().trim();
+                    try { recognition.start(); } catch (e) { const t = micTarget; micTarget = null; if (t) t.setMicLabel("off"); }
+                }
+            };
+        }
+        micTarget = panel;
+        micFinalText = panel.getInputValue().trim();
+        try {
+            recognition.start();
+            panel.setMicLabel("on");
+            panel.focus();
+        } catch (e) {
+            panel.setMicLabel("error");
+        }
+    }
+
+    // ── open-set persistence (restore the grid across reloads) ─────
+    function saveOpenSet() {
+        try { localStorage.setItem("term-open", JSON.stringify(Array.from(openPanels.keys()))); } catch (e) {}
+    }
+    function recalledOpenSet() {
+        try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
+    }
+
+    // ── one live session, rendered as a grid tile ─────────────────
+    function createPanel(session) {
+        let sessionId = session.id;
+        let mindId = session.mind_id || null;
+        let mindName = session.mind_name || null;
+
+        const el = document.createElement("section");
+        el.className = "term-panel";
+        el.dataset.sessionId = sessionId;
+        el.innerHTML =
+            '<header class="term-panel-head">' +
+                '<button class="term-panel-back term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹</button>' +
+                '<span class="term-panel-info">…</span>' +
+                '<button class="term-panel-speaker term-action-btn" type="button" title="toggle voice playback" aria-pressed="false">speaker off</button>' +
+                '<button class="term-panel-delete term-action-btn term-action-btn-danger" type="button" title="delete this session" hidden>delete</button>' +
+                '<button class="term-panel-close term-action-btn" type="button" title="remove from grid" aria-label="remove from grid">✕</button>' +
+            '</header>' +
+            '<div class="term-feed" aria-live="polite"></div>' +
+            '<form class="term-input-bar" autocomplete="off">' +
+                '<span class="term-prompt">&gt;</span>' +
+                '<textarea class="term-input" rows="1" placeholder="type a message…" aria-label="message"></textarea>' +
+                '<button class="term-mic-btn term-send-btn" type="button" title="hold or toggle to dictate" hidden>mic</button>' +
+                '<button type="submit" class="term-send-btn">send</button>' +
+            '</form>';
+
+        const feed = el.querySelector(".term-feed");
+        const form = el.querySelector(".term-input-bar");
+        const input = el.querySelector(".term-input");
+        const info = el.querySelector(".term-panel-info");
+        const speakerBtn = el.querySelector(".term-panel-speaker");
+        const deleteBtn = el.querySelector(".term-panel-delete");
+        const closeBtn = el.querySelector(".term-panel-close");
+        const backBtn = el.querySelector(".term-panel-back");
+        const micBtn = el.querySelector(".term-mic-btn");
+
+        let eventSource = null;
+        let currentAssistantEl = null;
+        let reattachTimer = null;
+        let reattachStartedAt = 0;
+        let sessionWasClosed = false;
+        let inFlight = false;
+        let pendingUserText = null;
+        let pendingUserEl = null;
+        let pendingPill = null;
+        let assistantDoneTimer = null;
+        let destroyed = false;
+
+        // per-panel TTS
+        const audioEl = new Audio();
+        audioEl.preload = "auto";
+        let speakerOn = false;
+        let ttsBuffer = "";
+        let ttsFlushTimer = null;
+        let ttsPlaying = false;
+        const ttsQueue = [];
+
+        function setInfo() {
+            info.textContent = (mindName || (mindId || "").slice(0, 8)) + " · " + (session.status || "running");
+        }
+
+        function appendLine(cls, text) {
+            currentAssistantEl = null;
+            const line = document.createElement("div");
+            line.className = "term-line " + cls;
+            line.textContent = text;
+            feed.appendChild(line);
+            feed.scrollTop = feed.scrollHeight;
+            return line;
+        }
+        function startAssistantLine() {
+            currentAssistantEl = document.createElement("div");
+            currentAssistantEl.className = "term-line term-assistant";
+            currentAssistantEl.dataset.prefix = (mindName || "mind") + " > ";
+            currentAssistantEl.textContent = currentAssistantEl.dataset.prefix;
+            feed.appendChild(currentAssistantEl);
+            feed.scrollTop = feed.scrollHeight;
+        }
+        function appendAssistantChunk(text) {
+            if (!currentAssistantEl) return;
+            currentAssistantEl.textContent += text;
+            feed.scrollTop = feed.scrollHeight;
+        }
+
+        function scheduleAssistantDone() {
+            if (assistantDoneTimer) clearTimeout(assistantDoneTimer);
+            assistantDoneTimer = setTimeout(function () {
+                assistantDoneTimer = null;
                 inFlight = false;
-            } else if (text) {
-                appendLine("term-user", "> " + text);
-            }
-            flushTtsNow();
-        } else if (event.type === "result") {
-            cancelAssistantDone();
-            inFlight = false;
-            currentAssistantEl = null;
-            flushTtsNow();
-            flushQueuedMessage();
-        } else if (event.type === "session_closed") {
-            cancelAssistantDone();
-            currentAssistantEl = null;
-            inFlight = false;
-            pendingUserEl = null; pendingUserText = null; pendingPill = null;
-            sessionWasClosed = true;
-            disconnectStream();
-            beginReattachLoop();
+                currentAssistantEl = null;
+                flushQueuedMessage();
+            }, ASSISTANT_IDLE_MS);
         }
-        // tool events are intentionally ignored
-    }
-
-    function disconnectStream() {
-        if (eventSource) { eventSource.close(); eventSource = null; }
-    }
-
-    function connectStream(sessionId) {
-        disconnectStream();
-        eventSource = new EventSource("/api/console/" + sessionId + "/stream");
-        eventSource.onmessage = function(msg) {
-            try { handleEvent(JSON.parse(msg.data)); } catch(e) {}
-        };
-        eventSource.onerror = function() {
-            if (sessionWasClosed) return;
-            setTimeout(function() {
-                if (currentSessionId === sessionId && !sessionWasClosed) connectStream(sessionId);
-            }, 3000);
-        };
-    }
-
-    function cancelReattachLoop() {
-        if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
-    }
-
-    function beginReattachLoop() {
-        cancelReattachLoop();
-        if (!currentMindId) {
-            appendLine("term-system", "— session closed —");
-            return;
+        function cancelAssistantDone() {
+            if (assistantDoneTimer) { clearTimeout(assistantDoneTimer); assistantDoneTimer = null; }
         }
-        reattachStartedAt = Date.now();
-        appendLine("term-system", "session rotated — reattaching to " + (currentMindName || "mind") + "…");
-        pollForSuccessor();
-    }
 
-    async function pollForSuccessor() {
-        if (!currentMindId) return;
-        const deadId = currentSessionId || "";
-        const mindId = currentMindId;
-        try {
-            const resp = await fetch(
-                "/api/terminal/active?mind_id=" + encodeURIComponent(mindId) +
-                "&exclude=" + encodeURIComponent(deadId),
-                {credentials: "same-origin"}
-            );
-            if (resp.status === 200) {
-                const successor = await resp.json();
-                if (successor && successor.id) {
-                    attachSuccessor(successor);
-                    return;
-                }
-            }
-        } catch(err) { /* swallow; retry below */ }
-
-        const elapsed = Date.now() - reattachStartedAt;
-        if (elapsed >= 30000) {
+        async function flushQueuedMessage() {
+            if (!pendingUserText || !sessionId) return;
+            const textToSend = pendingUserText;
+            const elToSend = pendingUserEl;
+            pendingUserEl = null; pendingUserText = null;
+            if (pendingPill) { pendingPill.remove(); pendingPill = null; }
+            if (elToSend) elToSend.classList.remove("term-pending");
             try {
-                const created = await fetch("/api/terminal/session", {
-                    method: "POST",
-                    credentials: "same-origin",
+                await fetch("/api/console/" + sessionId + "/message", {
+                    method: "POST", credentials: "same-origin",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({mind_id: mindId}),
+                    body: JSON.stringify({text: textToSend}),
                 });
-                if (created.ok) {
-                    const sess = await created.json();
-                    attachSuccessor(sess);
-                    return;
+            } catch (err) { appendLine("term-system", "send error: " + err.message); }
+        }
+
+        // ── TTS ───────────────────────────────────────────────────
+        function loadSpeakerPref() {
+            try { return localStorage.getItem("term-speaker:" + (mindName || "default")) === "on"; }
+            catch (e) { return false; }
+        }
+        function saveSpeakerPref(on) {
+            try { localStorage.setItem("term-speaker:" + (mindName || "default"), on ? "on" : "off"); } catch (e) {}
+        }
+        function setSpeakerLabel() {
+            speakerBtn.textContent = speakerOn ? "speaker on" : "speaker off";
+            speakerBtn.setAttribute("aria-pressed", speakerOn ? "true" : "false");
+            speakerBtn.classList.toggle("term-speaker-on", speakerOn);
+        }
+        function ttsAccumulate(chunk) { if (speakerOn) ttsBuffer += chunk; }
+        function scheduleTtsFlush() {
+            if (!speakerOn) return;
+            if (ttsFlushTimer) clearTimeout(ttsFlushTimer);
+            ttsFlushTimer = setTimeout(flushTtsNow, 1500);
+        }
+        async function flushTtsNow() {
+            if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+            const text = ttsBuffer.trim();
+            ttsBuffer = "";
+            if (!speakerOn || !text) return;
+            try {
+                const resp = await fetch("/api/terminal/tts", {
+                    method: "POST", credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({text: text, voice_id: mindName || "default"}),
+                });
+                if (!resp.ok) return;
+                const blob = await resp.blob();
+                ttsQueue.push(URL.createObjectURL(blob));
+                playNextTtsClip();
+            } catch (err) {}
+        }
+        function playNextTtsClip() {
+            if (ttsPlaying) return;
+            const url = ttsQueue.shift();
+            if (!url) return;
+            ttsPlaying = true;
+            audioEl.src = url;
+            audioEl.play().catch(function () { ttsPlaying = false; URL.revokeObjectURL(url); });
+            audioEl.onended = function () {
+                URL.revokeObjectURL(url);
+                ttsPlaying = false;
+                playNextTtsClip();
+            };
+        }
+        speakerOn = loadSpeakerPref();
+        setSpeakerLabel();
+        speakerBtn.addEventListener("click", function () {
+            speakerOn = !speakerOn;
+            saveSpeakerPref(speakerOn);
+            setSpeakerLabel();
+            if (!speakerOn) {
+                ttsBuffer = "";
+                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+                ttsQueue.length = 0;
+                try { audioEl.pause(); audioEl.src = ""; } catch (e) {}
+                ttsPlaying = false;
+            }
+        });
+
+        // ── streaming ─────────────────────────────────────────────
+        function handleEvent(event) {
+            if (event.type === "assistant") {
+                inFlight = true;
+                if (pendingUserEl && !pendingPill) {
+                    pendingPill = makeInterruptPill();
+                    pendingUserEl.appendChild(pendingPill);
                 }
-            } catch(err) { /* fall through */ }
-            appendLine("term-system", "reattach failed — go back and pick a session to retry");
+                const chunk = extractText(event);
+                if (!chunk) return;
+                if (!currentAssistantEl) startAssistantLine();
+                appendAssistantChunk(chunk);
+                ttsAccumulate(chunk);
+                scheduleTtsFlush();
+                scheduleAssistantDone();
+            } else if (event.type === "user") {
+                const text = extractText(event);
+                if (pendingUserEl && text === pendingUserText) {
+                    pendingUserEl.classList.remove("term-pending");
+                    if (pendingPill) { pendingPill.remove(); pendingPill = null; }
+                    pendingUserEl = null; pendingUserText = null; inFlight = false;
+                } else if (text) {
+                    appendLine("term-user", "> " + text);
+                }
+                flushTtsNow();
+            } else if (event.type === "result") {
+                cancelAssistantDone();
+                inFlight = false;
+                currentAssistantEl = null;
+                flushTtsNow();
+                flushQueuedMessage();
+            } else if (event.type === "session_closed") {
+                cancelAssistantDone();
+                currentAssistantEl = null;
+                inFlight = false;
+                pendingUserEl = null; pendingUserText = null; pendingPill = null;
+                sessionWasClosed = true;
+                disconnectStream();
+                beginReattachLoop();
+            }
+            // tool events are intentionally ignored
+        }
+        function disconnectStream() {
+            if (eventSource) { eventSource.close(); eventSource = null; }
+        }
+        function connectStream(id) {
+            disconnectStream();
+            eventSource = new EventSource("/api/console/" + id + "/stream");
+            eventSource.onmessage = function (msg) {
+                try { handleEvent(JSON.parse(msg.data)); } catch (e) {}
+            };
+            eventSource.onerror = function () {
+                if (sessionWasClosed || destroyed) return;
+                setTimeout(function () {
+                    if (sessionId === id && !sessionWasClosed && !destroyed) connectStream(id);
+                }, 3000);
+            };
+        }
+
+        function cancelReattachLoop() {
+            if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
+        }
+        function beginReattachLoop() {
+            cancelReattachLoop();
+            if (!mindId) { appendLine("term-system", "— session closed —"); return; }
+            reattachStartedAt = Date.now();
+            appendLine("term-system", "session rotated — reattaching to " + (mindName || "mind") + "…");
+            pollForSuccessor();
+        }
+        async function pollForSuccessor() {
+            if (!mindId || destroyed) return;
+            const deadId = sessionId || "";
+            try {
+                const resp = await fetch(
+                    "/api/terminal/active?mind_id=" + encodeURIComponent(mindId) +
+                    "&exclude=" + encodeURIComponent(deadId),
+                    {credentials: "same-origin"}
+                );
+                if (resp.status === 200) {
+                    const successor = await resp.json();
+                    if (successor && successor.id) { attachSuccessor(successor); return; }
+                }
+            } catch (err) {}
+            const elapsed = Date.now() - reattachStartedAt;
+            if (elapsed >= 30000) {
+                try {
+                    const created = await fetch("/api/terminal/session", {
+                        method: "POST", credentials: "same-origin",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({mind_id: mindId}),
+                    });
+                    if (created.ok) { attachSuccessor(await created.json()); return; }
+                } catch (err) {}
+                appendLine("term-system", "reattach failed — remove this tile and pick the session again");
+                return;
+            }
+            reattachTimer = setTimeout(pollForSuccessor, 2000);
+        }
+        function attachSuccessor(succ) {
+            cancelReattachLoop();
+            sessionWasClosed = false;
+            appendLine("term-system", "reattached to " + (succ.id || "").slice(0, 8));
+            const oldId = sessionId;
+            sessionId = succ.id;
+            mindId = succ.mind_id || mindId;
+            session.status = succ.status || "running";
+            el.dataset.sessionId = sessionId;
+            setInfo();
+            reKey(oldId, sessionId);
+            connectStream(sessionId);
+            refreshSelector();
+        }
+
+        // ── interrupt pill ────────────────────────────────────────
+        function makeInterruptPill() {
+            const pill = document.createElement("button");
+            pill.type = "button";
+            pill.className = "term-interrupt-pill";
+            pill.textContent = "interrupt";
+            pill.addEventListener("click", function () { doInterrupt(pill); });
+            return pill;
+        }
+        async function doInterrupt(pill) {
+            pill.disabled = true;
+            pill.textContent = "interrupting…";
+            const queuedText = pendingUserText;
+            const id = sessionId;
+            try {
+                await fetch("/api/console/" + id + "/interrupt", {method: "POST", credentials: "same-origin"});
+            } catch (e) {
+                pill.disabled = false; pill.textContent = "interrupt"; return;
+            }
+            if (queuedText) {
+                try {
+                    await fetch("/api/console/" + id + "/message", {
+                        method: "POST", credentials: "same-origin",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({text: queuedText}),
+                    });
+                } catch (err) {
+                    appendLine("term-system", "send error: " + err.message);
+                    if (pendingUserEl) { pendingUserEl.remove(); pendingUserEl = null; pendingUserText = null; pendingPill = null; }
+                }
+            }
+        }
+
+        // ── input ─────────────────────────────────────────────────
+        function autoGrowInput() {
+            input.style.height = "auto";
+            input.style.height = input.scrollHeight + "px";
+        }
+        input.addEventListener("input", autoGrowInput);
+        input.addEventListener("focus", function () { focusedPanel = panel; });
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+        });
+        setTimeout(autoGrowInput, 0);
+
+        form.addEventListener("submit", async function (e) {
+            e.preventDefault();
+            if (micTarget === panel) { stopMic(); micFinalText = ""; }
+            const text = input.value.trim();
+            if (!text || !sessionId) return;
+            input.value = "";
+            autoGrowInput();
+            currentAssistantEl = null;
+            const wasInFlight = inFlight;
+            if (!pendingUserEl) {
+                const lineEl = document.createElement("div");
+                lineEl.className = "term-line term-user term-pending";
+                lineEl.textContent = "> " + text;
+                if (wasInFlight) { pendingPill = makeInterruptPill(); lineEl.appendChild(pendingPill); }
+                feed.appendChild(lineEl);
+                feed.scrollTop = feed.scrollHeight;
+                pendingUserEl = lineEl;
+                pendingUserText = text;
+            }
+            if (wasInFlight) return;
+            try {
+                await fetch("/api/console/" + sessionId + "/message", {
+                    method: "POST", credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({text: text}),
+                });
+            } catch (err) {
+                appendLine("term-system", "send error: " + err.message);
+                if (pendingUserEl) { pendingUserEl.remove(); pendingUserEl = null; pendingUserText = null; pendingPill = null; }
+            }
+        });
+
+        // ── mic ───────────────────────────────────────────────────
+        if (micSupported) {
+            micBtn.hidden = false;
+            micBtn.addEventListener("click", function () {
+                if (micTarget === panel) stopMic();
+                else startMic(panel);
+            });
+        }
+
+        // ── delete / close / back ─────────────────────────────────
+        deleteBtn.addEventListener("click", async function () {
+            if (!sessionId) return;
+            if (!confirm("Delete this session? This cannot be undone.")) return;
+            const id = sessionId;
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "deleting…";
+            try {
+                const resp = await fetch("/api/terminal/session/" + id, {method: "DELETE", credentials: "same-origin"});
+                if (!resp.ok) {
+                    let msg = "HTTP " + resp.status;
+                    try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch (e) {}
+                    appendLine("term-system", "delete failed: " + msg);
+                    deleteBtn.disabled = false; deleteBtn.textContent = "delete";
+                } else {
+                    closePanel(panel);
+                    await refreshSelector();
+                }
+            } catch (err) {
+                appendLine("term-system", "delete error: " + err.message);
+                deleteBtn.disabled = false; deleteBtn.textContent = "delete";
+            }
+        });
+        closeBtn.addEventListener("click", function () { closePanel(panel); });
+        backBtn.addEventListener("click", function () { closePanel(panel); });
+
+        // ── history load + go live ────────────────────────────────
+        async function load() {
+            setInfo();
+            deleteBtn.hidden = false;
+            try {
+                const resp = await fetch("/api/terminal/session/" + sessionId + "/history", {credentials: "same-origin"});
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const msgs = data.messages || [];
+                    for (const m of msgs) {
+                        const body = flattenContent(m.content);
+                        if (!body) continue;
+                        if (m.role === "user") {
+                            appendLine("term-user", "> " + body);
+                        } else if (m.role === "assistant") {
+                            const line = document.createElement("div");
+                            line.className = "term-line term-assistant";
+                            line.dataset.prefix = (mindName || "mind") + " > ";
+                            line.textContent = line.dataset.prefix + body;
+                            feed.appendChild(line);
+                            feed.scrollTop = feed.scrollHeight;
+                        }
+                    }
+                    if (msgs.length > 0) appendLine("term-system", "— history · live below —");
+                }
+            } catch (e) {}
+            if (session.summary && session.summary !== "New session") {
+                appendLine("term-system", "context: " + session.summary);
+            }
+            connectStream(sessionId);
+        }
+
+        const panel = {
+            el: el,
+            get sessionId() { return sessionId; },
+            mindId: function () { return mindId; },
+            load: load,
+            focus: function () { focusedPanel = panel; input.focus(); },
+            getInputValue: function () { return input.value; },
+            setInputValue: function (v) { input.value = v; autoGrowInput(); },
+            setMicLabel: function (state) {
+                if (state === "on") { micBtn.textContent = "listening…"; micBtn.classList.add("term-mic-on"); }
+                else if (state === "error") { micBtn.textContent = "mic error"; micBtn.classList.remove("term-mic-on"); }
+                else { micBtn.textContent = "mic"; micBtn.classList.remove("term-mic-on"); }
+            },
+            destroy: function () {
+                destroyed = true;
+                if (micTarget === panel) stopMic();
+                disconnectStream();
+                cancelReattachLoop();
+                cancelAssistantDone();
+                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+                try { audioEl.pause(); audioEl.src = ""; } catch (e) {}
+                ttsQueue.length = 0;
+                if (el.parentNode) el.parentNode.removeChild(el);
+            },
+        };
+        return panel;
+    }
+
+    // ── grid / stage management ───────────────────────────────────
+    function relayoutGrid() {
+        const n = openPanels.size;
+        gridEl.dataset.count = String(n);
+        gridEmpty.hidden = n > 0;
+        if (n > 0) {
+            const cols = Math.min(n, Math.ceil(Math.sqrt(n)));
+            gridEl.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        } else {
+            gridEl.style.gridTemplateColumns = "";
+        }
+    }
+
+    function reKey(oldId, newId) {
+        if (oldId === newId) return;
+        const panel = openPanels.get(oldId);
+        if (!panel) return;
+        openPanels.delete(oldId);
+        openPanels.set(newId, panel);
+        saveOpenSet();
+        renderCards(lastMinds);
+    }
+
+    function closePanel(panel) {
+        openPanels.delete(panel.sessionId);
+        panel.destroy();
+        if (focusedPanel === panel) focusedPanel = null;
+        relayoutGrid();
+        saveOpenSet();
+        renderCards(lastMinds);
+        if (!isWide() && openPanels.size === 0) showView("list");
+    }
+
+    function addPanel(session) {
+        // already open → just focus it
+        const existing = openPanels.get(session.id);
+        if (existing) {
+            existing.focus();
+            if (!isWide()) showView("stage");
             return;
         }
-        reattachTimer = setTimeout(pollForSuccessor, 2000);
-    }
-
-    function attachSuccessor(session) {
-        cancelReattachLoop();
-        sessionWasClosed = false;
-        appendLine("term-system", "reattached to " + (session.id || "").slice(0, 8));
-        currentSessionId = session.id;
-        currentMindId = session.mind_id || currentMindId;
-        sessionInfo.textContent = (currentMindName || (session.mind_id || "").slice(0, 8)) + " · " + (session.status || "running");
-        rememberSession(session.id);
-        connectStream(session.id);
-        refreshSelector(session.id);
-    }
-
-    function rememberSession(sessionId) {
-        try { if (sessionId) localStorage.setItem("term-session", sessionId); } catch(e) {}
-    }
-    function recalledSession() {
-        try { return localStorage.getItem("term-session") || ""; } catch(e) { return ""; }
-    }
-
-    async function setSession(session) {
-        cancelReattachLoop();
-        cancelAssistantDone();
-        sessionWasClosed = false;
-        currentSessionId = session.id;
-        currentMindId = session.mind_id || currentMindId;
-        if (session.mind_name) currentMindName = session.mind_name;
-        sessionInfo.textContent = (currentMindName || (session.mind_id || "").slice(0, 8)) + " · " + (session.status || "running");
-        deleteSessionBtn.hidden = false;
-        feed.innerHTML = "";
-        currentAssistantEl = null;
-        inFlight = false;
-        pendingUserEl = null; pendingUserText = null; pendingPill = null;
-        rememberSession(session.id);
-
-        // Load session history before connecting the live stream
-        try {
-            const resp = await fetch("/api/terminal/session/" + session.id + "/history", {credentials: "same-origin"});
-            if (resp.ok) {
-                const data = await resp.json();
-                const msgs = data.messages || [];
-                for (const m of msgs) {
-                    const body = flattenContent(m.content);
-                    if (!body) continue;
-                    if (m.role === "user") {
-                        appendLine("term-user", "> " + body);
-                    } else if (m.role === "assistant") {
-                        const el = document.createElement("div");
-                        el.className = "term-line term-assistant";
-                        el.dataset.prefix = (currentMindName || "mind") + " > ";
-                        el.textContent = el.dataset.prefix + body;
-                        feed.appendChild(el);
-                        feed.scrollTop = feed.scrollHeight;
-                    }
-                }
-                if (msgs.length > 0) appendLine("term-system", "— history · live below —");
-            }
-        } catch(e) { /* swallow — history is optional */ }
-
-        if (session.summary && session.summary !== "New session") {
-            appendLine("term-system", "context: " + session.summary);
+        // mobile is single-panel: replace whatever's open
+        if (!isWide()) {
+            Array.from(openPanels.values()).forEach(function (p) { openPanels.delete(p.sessionId); p.destroy(); });
         }
-        connectStream(session.id);
+        const panel = createPanel(session);
+        openPanels.set(session.id, panel);
+        gridEl.appendChild(panel.el);
+        relayoutGrid();
+        panel.load();
+        panel.focus();
+        saveOpenSet();
+        renderCards(lastMinds);
+        if (!isWide()) showView("stage");
     }
 
-    // ── engage / disengage ────────────────────────────────────────
-    function engage(card) {
-        setSession({
-            id: card.dataset.sessionId,
-            mind_id: card.dataset.mindId,
-            mind_name: card.dataset.mindName,
-            status: card.dataset.status || "running",
-            summary: card.dataset.summary || "",
-        });
-        showView("convo");
-        renderCards(lastMinds);   // refresh is-current highlight
-        input.focus();
-    }
-
-    function disengage() {
-        disconnectStream();
-        cancelReattachLoop();
-        cancelAssistantDone();
-        inFlight = false;
-        pendingUserEl = null; pendingUserText = null; pendingPill = null;
-        showView("list");
-        refreshSelector();
-    }
-    backBtn.addEventListener("click", disengage);
+    function showView(name) { termApp.dataset.view = name; }
 
     // ── session list rendering ────────────────────────────────────
-    function isActiveStatus(status) {
-        return ACTIVE_STATUSES.has((status || "").toLowerCase());
-    }
+    function isActiveStatus(status) { return ACTIVE_STATUSES.has((status || "").toLowerCase()); }
     function statusDotClass(status) {
         const s = (status || "").toLowerCase();
         if (s === "running") return "is-running";
@@ -401,8 +699,8 @@
         lastMinds = minds || [];
         listEl.innerHTML = "";
         let count = 0;
-        lastMinds.forEach(function(mind) {
-            const sessions = (mind.sessions || []).filter(function(s) {
+        lastMinds.forEach(function (mind) {
+            const sessions = (mind.sessions || []).filter(function (s) {
                 const active = isActiveStatus(s.status);
                 return currentFilter === "active" ? active : !active;
             });
@@ -411,10 +709,10 @@
             group.className = "term-mind-group";
             group.textContent = mind.name;
             listEl.appendChild(group);
-            sessions.forEach(function(s) {
+            sessions.forEach(function (s) {
                 const card = document.createElement("button");
                 card.type = "button";
-                card.className = "term-card" + (s.id === currentSessionId ? " is-current" : "");
+                card.className = "term-card" + (openPanels.has(s.id) ? " is-current" : "");
                 card.dataset.sessionId = s.id;
                 card.dataset.mindId = mind.id;
                 card.dataset.mindName = mind.name;
@@ -442,33 +740,35 @@
                     sum.textContent = s.summary;
                     body.appendChild(sum);
                 }
-
                 card.appendChild(dot);
                 card.appendChild(body);
-                card.addEventListener("click", function() { engage(card); });
+                card.addEventListener("click", function () {
+                    addPanel({
+                        id: card.dataset.sessionId,
+                        mind_id: card.dataset.mindId,
+                        mind_name: card.dataset.mindName,
+                        status: card.dataset.status || "running",
+                        summary: card.dataset.summary || "",
+                    });
+                });
                 listEl.appendChild(card);
                 count += 1;
             });
         });
         listEmpty.hidden = count > 0;
-        listEmpty.textContent = currentFilter === "active"
-            ? "No active sessions."
-            : "No archived sessions.";
+        listEmpty.textContent = currentFilter === "active" ? "No active sessions." : "No archived sessions.";
     }
 
-    async function refreshSelector(preserveSessionId) {
+    async function refreshSelector() {
         try {
             const resp = await fetch("/api/terminal/selector", {credentials: "same-origin"});
             if (!resp.ok) return;
-            const data = await resp.json();
-            rebuildSelector(data, preserveSessionId || currentSessionId);
-        } catch(err) { /* swallow */ }
+            rebuildSelector(await resp.json());
+        } catch (err) {}
     }
-
-    function rebuildSelector(minds, preserveSessionId) {
-        // keep the hidden seed select in sync (no-JS fallback + reattach source)
+    function rebuildSelector(minds) {
         mindSelect.innerHTML = "";
-        (minds || []).forEach(function(mind) {
+        (minds || []).forEach(function (mind) {
             const group = document.createElement("optgroup");
             group.label = mind.name + " · " + (mind.id || "").slice(0, 8);
             const newOpt = document.createElement("option");
@@ -478,7 +778,7 @@
             newOpt.dataset.mindName = mind.name;
             newOpt.textContent = "— new session for " + mind.name + " —";
             group.appendChild(newOpt);
-            (mind.sessions || []).forEach(function(s) {
+            (mind.sessions || []).forEach(function (s) {
                 const opt = document.createElement("option");
                 opt.value = "session:" + s.id;
                 opt.dataset.action = "load";
@@ -492,9 +792,50 @@
             });
             mindSelect.appendChild(group);
         });
-        void preserveSessionId;
         renderCards(minds || []);
     }
+
+    // ── new session ───────────────────────────────────────────────
+    async function spawnSession(mind) {
+        newMenu.hidden = true;
+        try {
+            const resp = await fetch("/api/terminal/session", {
+                method: "POST", credentials: "same-origin",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({mind_id: mind.id}),
+            });
+            if (!resp.ok) return;
+            const sess = await resp.json();
+            addPanel({
+                id: sess.id,
+                mind_id: sess.mind_id || mind.id,
+                mind_name: mind.name,
+                status: sess.status || "running",
+                summary: sess.summary || "New session",
+            });
+            await refreshSelector();
+        } catch (err) {}
+    }
+    function toggleNewMenu() {
+        const minds = lastMinds.filter(function (m) { return m && m.id; });
+        if (minds.length === 0) return;
+        if (minds.length === 1) { spawnSession(minds[0]); return; }
+        if (!newMenu.hidden) { newMenu.hidden = true; return; }
+        newMenu.innerHTML = "";
+        minds.forEach(function (m) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "term-new-menu-item";
+            btn.textContent = "new · " + m.name;
+            btn.addEventListener("click", function () { spawnSession(m); });
+            newMenu.appendChild(btn);
+        });
+        newMenu.hidden = false;
+    }
+    newBtn.addEventListener("click", toggleNewMenu);
+    document.addEventListener("click", function (e) {
+        if (!newMenu.hidden && !newMenu.contains(e.target) && e.target !== newBtn) newMenu.hidden = true;
+    });
 
     // ── filter tabs ───────────────────────────────────────────────
     function setFilter(filter) {
@@ -506,316 +847,29 @@
         tabArchived.setAttribute("aria-selected", activeSel ? "false" : "true");
         renderCards(lastMinds);
     }
-    tabActive.addEventListener("click", function() { setFilter("active"); });
-    tabArchived.addEventListener("click", function() { setFilter("archived"); });
+    tabActive.addEventListener("click", function () { setFilter("active"); });
+    tabArchived.addEventListener("click", function () { setFilter("archived"); });
+    if (refreshBtn) refreshBtn.addEventListener("click", function () { refreshSelector(); });
 
-    if (refreshBtn) refreshBtn.addEventListener("click", function() { refreshSelector(); });
-
-    deleteSessionBtn.addEventListener("click", async function() {
-        if (!currentSessionId) return;
-        if (!confirm("Delete this session? This cannot be undone.")) return;
-        const sessionId = currentSessionId;
-        deleteSessionBtn.disabled = true;
-        deleteSessionBtn.textContent = "deleting…";
-        try {
-            const resp = await fetch("/api/terminal/session/" + sessionId, {
-                method: "DELETE",
-                credentials: "same-origin",
-            });
-            if (!resp.ok) {
-                let msg = "HTTP " + resp.status;
-                try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch {}
-                appendLine("term-system", "delete failed: " + msg);
-            } else {
-                disconnectStream();
-                cancelReattachLoop();
-                currentSessionId = null;
-                feed.innerHTML = "";
-                sessionInfo.textContent = "no session";
-                deleteSessionBtn.hidden = true;
-                showView("list");
-                await refreshSelector();
-            }
-        } catch(err) {
-            appendLine("term-system", "delete error: " + err.message);
-        } finally {
-            deleteSessionBtn.disabled = false;
-            deleteSessionBtn.textContent = "delete";
-        }
-    });
-
-    function autoGrowInput() {
-        input.style.height = "auto";
-        input.style.height = input.scrollHeight + "px";
+    // ── rail collapse (desktop) ───────────────────────────────────
+    function setRail(collapsed) {
+        termApp.dataset.rail = collapsed ? "collapsed" : "expanded";
+        railExpandBtn.hidden = !collapsed;
+        try { localStorage.setItem("term-rail", collapsed ? "collapsed" : "expanded"); } catch (e) {}
     }
-    input.addEventListener("input", autoGrowInput);
-    input.addEventListener("keydown", function(e) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            form.requestSubmit();
-        }
-    });
-    setTimeout(autoGrowInput, 0);
+    railCollapseBtn.addEventListener("click", function () { setRail(true); });
+    railExpandBtn.addEventListener("click", function () { setRail(false); });
 
-    async function doInterrupt(pill) {
-        pill.disabled = true;
-        pill.textContent = "interrupting…";
-        const queuedText = pendingUserText;
-        const sessionId = currentSessionId;
-        try {
-            await fetch("/api/console/" + sessionId + "/interrupt", {
-                method: "POST",
-                credentials: "same-origin",
-            });
-        } catch(e) {
-            pill.disabled = false;
-            pill.textContent = "interrupt";
-            return;
-        }
-        if (queuedText) {
-            try {
-                await fetch("/api/console/" + sessionId + "/message", {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({text: queuedText}),
-                });
-            } catch(err) {
-                appendLine("term-system", "send error: " + err.message);
-                if (pendingUserEl) {
-                    pendingUserEl.remove();
-                    pendingUserEl = null; pendingUserText = null; pendingPill = null;
-                }
-            }
-        }
-    }
-
-    form.addEventListener("submit", async function(e) {
-        e.preventDefault();
-        const text = input.value.trim();
-        if (!text || !currentSessionId) return;
-        input.value = "";
-        autoGrowInput();
-        currentAssistantEl = null;
-
-        const wasInFlight = inFlight;
-
-        if (!pendingUserEl) {
-            const lineEl = document.createElement("div");
-            lineEl.className = "term-line term-user term-pending";
-            lineEl.textContent = "> " + text;
-            if (wasInFlight) {
-                const pill = document.createElement("button");
-                pill.type = "button";
-                pill.className = "term-interrupt-pill";
-                pill.textContent = "interrupt";
-                pill.addEventListener("click", function() { doInterrupt(pill); });
-                lineEl.appendChild(pill);
-                pendingPill = pill;
-            }
-            feed.appendChild(lineEl);
-            feed.scrollTop = feed.scrollHeight;
-            pendingUserEl = lineEl;
-            pendingUserText = text;
-        }
-
-        if (wasInFlight) return;
-
-        try {
-            await fetch("/api/console/" + currentSessionId + "/message", {
-                method: "POST",
-                credentials: "same-origin",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({text: text}),
-            });
-        } catch(err) {
-            appendLine("term-system", "send error: " + err.message);
-            if (pendingUserEl) {
-                pendingUserEl.remove();
-                pendingUserEl = null; pendingUserText = null; pendingPill = null;
-            }
-        }
-    });
-
-    // --- Voice output (Skippy TTS) ---
-    const speakerBtn = document.getElementById("term-speaker-btn");
-    const audioEl = new Audio();
-    audioEl.preload = "auto";
-    let speakerOn = false;
-    let ttsBuffer = "";
-    let ttsFlushTimer = null;
-    let ttsPlaying = false;
-    const ttsQueue = [];
-
-    function loadSpeakerPref() {
-        try { return localStorage.getItem("term-speaker") === "on"; }
-        catch(e) { return false; }
-    }
-    function saveSpeakerPref(on) {
-        try { localStorage.setItem("term-speaker", on ? "on" : "off"); }
-        catch(e) {}
-    }
-    function setSpeakerLabel() {
-        if (!speakerBtn) return;
-        speakerBtn.textContent = speakerOn ? "speaker on" : "speaker off";
-        speakerBtn.setAttribute("aria-pressed", speakerOn ? "true" : "false");
-        speakerBtn.classList.toggle("term-speaker-on", speakerOn);
-    }
-    function ttsAccumulate(chunk) {
-        if (!speakerOn) return;
-        ttsBuffer += chunk;
-    }
-    function scheduleTtsFlush() {
-        if (!speakerOn) return;
-        if (ttsFlushTimer) clearTimeout(ttsFlushTimer);
-        ttsFlushTimer = setTimeout(flushTtsNow, 1500);
-    }
-    async function flushTtsNow() {
-        if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
-        const text = ttsBuffer.trim();
-        ttsBuffer = "";
-        if (!speakerOn || !text) return;
-        const voiceId = currentMindName || "default";
-        try {
-            const resp = await fetch("/api/terminal/tts", {
-                method: "POST",
-                credentials: "same-origin",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({text: text, voice_id: voiceId}),
-            });
-            if (!resp.ok) return;
-            const blob = await resp.blob();
-            ttsQueue.push(URL.createObjectURL(blob));
-            playNextTtsClip();
-        } catch(err) { /* swallow */ }
-    }
-    function playNextTtsClip() {
-        if (ttsPlaying) return;
-        const url = ttsQueue.shift();
-        if (!url) return;
-        ttsPlaying = true;
-        audioEl.src = url;
-        audioEl.play().catch(function() { ttsPlaying = false; URL.revokeObjectURL(url); });
-        audioEl.onended = function() {
-            URL.revokeObjectURL(url);
-            ttsPlaying = false;
-            playNextTtsClip();
-        };
-    }
-    if (speakerBtn) {
-        speakerOn = loadSpeakerPref();
-        setSpeakerLabel();
-        speakerBtn.addEventListener("click", function() {
-            speakerOn = !speakerOn;
-            saveSpeakerPref(speakerOn);
-            setSpeakerLabel();
-            if (!speakerOn) {
-                ttsBuffer = "";
-                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
-                ttsQueue.length = 0;
-                try { audioEl.pause(); audioEl.src = ""; } catch(e) {}
-                ttsPlaying = false;
-            }
-        });
-    }
-
-    // --- Voice input (Web Speech API) ---
-    const micBtn = document.getElementById("term-mic-btn");
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognition = null;
-    let micActive = false;
-    let micFinalText = "";
-
-    function setMicLabel(state) {
-        if (!micBtn) return;
-        if (state === "on") {
-            micBtn.textContent = "listening…";
-            micBtn.classList.add("term-mic-on");
-        } else if (state === "error") {
-            micBtn.textContent = "mic error";
-            micBtn.classList.remove("term-mic-on");
-        } else {
-            micBtn.textContent = "mic";
-            micBtn.classList.remove("term-mic-on");
-        }
-    }
-
-    if (SpeechRecognitionCtor && micBtn) {
-        micBtn.hidden = false;
-        recognition = new SpeechRecognitionCtor();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = (navigator.language || "en-US");
-
-        recognition.onresult = function(event) {
-            let finalText = "";
-            let interim = "";
-            for (let i = 0; i < event.results.length; i++) {
-                const res = event.results[i];
-                const transcript = res[0] && res[0].transcript ? res[0].transcript : "";
-                if (res.isFinal) {
-                    finalText += (finalText ? " " : "") + transcript.trim();
-                } else {
-                    interim += transcript;
-                }
-            }
-            const preserved = micFinalText ? micFinalText + " " : "";
-            input.value = (preserved + finalText + " " + interim).replace(/\s+/g, " ").trim();
-            autoGrowInput();
-        };
-
-        recognition.onerror = function() {
-            setMicLabel("error");
-            micActive = false;
-        };
-
-        recognition.onend = function() {
-            if (micActive) {
-                micFinalText = input.value.trim();
-                try { recognition.start(); } catch(e) { micActive = false; setMicLabel("off"); }
-            } else {
-                setMicLabel("off");
-            }
-        };
-
-        micBtn.addEventListener("click", function() {
-            if (!micActive) {
-                micFinalText = input.value.trim();
-                try {
-                    recognition.start();
-                    micActive = true;
-                    setMicLabel("on");
-                    input.focus();
-                } catch(e) {
-                    setMicLabel("error");
-                }
-            } else {
-                micActive = false;
-                try { recognition.stop(); } catch(e) {}
-                setMicLabel("off");
-            }
-        });
-
-        form.addEventListener("submit", function() {
-            if (micActive) {
-                micActive = false;
-                try { recognition.stop(); } catch(e) {}
-                setMicLabel("off");
-            }
-            micFinalText = "";
-        });
-    }
-
-    // ── boot: build the initial list from the SSR seed, then refresh live ──
+    // ── boot ──────────────────────────────────────────────────────
     function mindsFromSeed() {
         const groups = Array.from(mindSelect.querySelectorAll("optgroup"));
-        return groups.map(function(g) {
+        return groups.map(function (g) {
             const opts = Array.from(g.querySelectorAll('option[data-action="load"]'));
             const first = g.querySelector('option[data-action="new"]');
             return {
                 id: (first && first.dataset.mindId) || (opts[0] && opts[0].dataset.mindId) || "",
                 name: (first && first.dataset.mindName) || (opts[0] && opts[0].dataset.mindName) || "mind",
-                sessions: opts.map(function(o) {
+                sessions: opts.map(function (o) {
                     return {
                         id: o.dataset.sessionId,
                         short_id: o.dataset.shortId || (o.dataset.sessionId || "").slice(0, 8),
@@ -829,29 +883,35 @@
         });
     }
 
+    try {
+        if (localStorage.getItem("term-rail") === "collapsed" && isWide()) setRail(true);
+    } catch (e) {}
+
     showView("list");
-    renderCards(mindsFromSeed());
+    const seed = mindsFromSeed();
+    renderCards(seed);
     refreshSelector();
 
-    // On a wide screen, auto-engage the remembered (or most recent active) session
-    // so the two-pane desktop layout isn't empty. Mobile lands on the list.
+    // Desktop: reopen the previously-open grid (or fall back to the most recent
+    // active session so the stage isn't empty). Mobile lands on the list.
     if (isWide()) {
-        const seed = mindsFromSeed();
-        let target = null;
-        const remembered = recalledSession();
-        seed.forEach(function(m) {
-            (m.sessions || []).forEach(function(s) {
-                if (!isActiveStatus(s.status)) return;
-                if (remembered && s.id === remembered) target = {m: m, s: s};
-                else if (!target) target = {m: m, s: s};
+        const wanted = recalledOpenSet();
+        const byId = {};
+        seed.forEach(function (m) {
+            (m.sessions || []).forEach(function (s) {
+                if (isActiveStatus(s.status)) byId[s.id] = {m: m, s: s};
             });
         });
-        if (target) {
-            setSession({
-                id: target.s.id, mind_id: target.m.id, mind_name: target.m.name,
-                status: target.s.status, summary: target.s.summary,
-            });
-            showView("convo");
+        let opened = 0;
+        wanted.forEach(function (id) {
+            const hit = byId[id];
+            if (!hit) return;
+            addPanel({id: hit.s.id, mind_id: hit.m.id, mind_name: hit.m.name, status: hit.s.status, summary: hit.s.summary});
+            opened += 1;
+        });
+        if (opened === 0) {
+            const first = Object.values(byId)[0];
+            if (first) addPanel({id: first.s.id, mind_id: first.m.id, mind_name: first.m.name, status: first.s.status, summary: first.s.summary});
         }
     }
 })();

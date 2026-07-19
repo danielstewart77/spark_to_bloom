@@ -191,7 +191,7 @@ def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypat
 
 
 def test_terminal_page_has_mobile_session_manager(tmp_path, monkeypatch):
-    """The redesigned page ships the mobile-first list + conversation views."""
+    """The redesigned page ships the agents rail + Brady-Bunch grid stage."""
     client = _authed_client(tmp_path, monkeypatch)
     now = int(__import__("time").time())
 
@@ -210,15 +210,39 @@ def test_terminal_page_has_mobile_session_manager(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     body = response.text
-    # two-view app shell
+    # app shell: list view starts foremost on mobile
     assert 'id="term-app"' in body and 'data-view="list"' in body
     # session list container + active/archived filter
     assert 'id="term-list"' in body
     assert 'id="term-tab-active"' in body and 'id="term-tab-archived"' in body
-    # engage/disengage: a back control returns from a conversation to the list
-    assert 'id="term-back"' in body
+    # the grid stage holds the open session tiles
+    assert 'id="term-stage"' in body and 'id="term-grid"' in body
+    # each tile carries a mobile back control (JS-built panel markup)
+    assert "term-panel-back" in body
     # server-rendered data seed still carries the session (JS builds cards from it)
     assert 'value="session:sess-live"' in body
+
+
+def test_terminal_page_has_new_session_and_collapsible_rail(tmp_path, monkeypatch):
+    """New-session spawn is back, and the agents rail is collapsible."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    # new-session control + it POSTs to the create endpoint
+    assert 'id="term-new"' in body
+    assert "/api/terminal/session" in body
+    # collapsible rail: collapse + expand affordances and the data-rail state
+    assert 'id="term-rail-collapse"' in body and 'id="term-rail-expand"' in body
+    assert 'data-rail=' in body
 
 
 def test_api_terminal_tts_proxies_to_voice_server(tmp_path, monkeypatch):
@@ -272,7 +296,7 @@ def test_terminal_page_has_speaker_toggle(tmp_path, monkeypatch):
         response = client.get("/terminal")
     assert response.status_code == 200
     body = response.text
-    assert 'id="term-speaker-btn"' in body
+    assert "term-panel-speaker" in body
     assert "/api/terminal/tts" in body
 
 
@@ -289,7 +313,7 @@ def test_terminal_input_is_growable_textarea(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     body = response.text
-    assert '<textarea' in body and 'id="term-input"' in body
+    assert '<textarea' in body and 'class="term-input"' in body
     assert "autoGrow" in body or "auto-grow" in body or "scrollHeight" in body
 
 
@@ -307,7 +331,7 @@ def test_terminal_page_renders_mic_button(tmp_path, monkeypatch):
         response = client.get("/terminal")
 
     assert response.status_code == 200
-    assert 'id="term-mic-btn"' in response.text
+    assert "term-mic-btn" in response.text
     assert "SpeechRecognition" in response.text
 
 
