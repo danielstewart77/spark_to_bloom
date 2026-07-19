@@ -959,6 +959,9 @@ nav ul li.user-controls {
     padding: 2rem;
     text-align: center;
 }
+/* the class' display:flex would otherwise beat the [hidden] attribute, leaving
+   the placeholder on screen behind open tiles — hide it explicitly when set */
+.term-grid-empty[hidden] { display: none; }
 
 /* one live session tile */
 .term-panel {

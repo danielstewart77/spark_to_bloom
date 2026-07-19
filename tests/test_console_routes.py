@@ -260,6 +260,19 @@ def test_terminal_page_has_session_rename_and_color_editor(tmp_path, monkeypatch
     assert "migrateLabel" in body
 
 
+def test_terminal_css_hides_grid_placeholder_when_set():
+    """The 'select a session' placeholder must obey [hidden] (its class sets
+    display:flex, which would otherwise beat the attribute and keep it on
+    screen behind open tiles)."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+    assert ".term-grid-empty[hidden]" in css
+    assert "display: none" in css.split(".term-grid-empty[hidden]", 1)[1][:40]
+
+
 def test_terminal_css_has_swatch_and_rename_editor_styles():
     """The rename editor and color swatches carry their own styling."""
     css_path = os.path.join(
