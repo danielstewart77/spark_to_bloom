@@ -1123,6 +1123,12 @@ nav ul li.user-controls {
    intro banner and empty footer are hidden here so only the app shows. The
    flex column means no magic-number height math and nothing but the feed
    scrolls. Scoped to the terminal page so other pages are untouched. */
+/* The site's `body, html { padding-top: var(--nav-h) }` rule offsets BOTH html
+   and body to clear the fixed nav — but the fixed nav only needs one offset, so
+   html's copy is a redundant 56px. On most pages the intro banner masked it;
+   with the banner hidden here it reads as a gap under the nav. Zero it on the
+   terminal page so the app sits flush under the nav (more room on mobile). */
+html:has(.terminal-page) { padding-top: 0; }
 body:has(.terminal-page) {
     overflow: hidden;
     height: 100dvh;
