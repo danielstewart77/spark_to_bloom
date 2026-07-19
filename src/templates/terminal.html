@@ -167,6 +167,33 @@
         try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
     }
 
+    // ── per-session labels (custom name + color), local to this browser ──
+    const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
+    function loadLabels() {
+        try { return JSON.parse(localStorage.getItem("term-labels") || "{}") || {}; } catch (e) { return {}; }
+    }
+    function saveLabels(map) {
+        try { localStorage.setItem("term-labels", JSON.stringify(map)); } catch (e) {}
+    }
+    function getLabel(id) {
+        if (!id) return {};
+        const l = loadLabels()[id];
+        return (l && typeof l === "object") ? l : {};
+    }
+    function setLabel(id, patch) {
+        if (!id) return;
+        const map = loadLabels();
+        const cur = (map[id] && typeof map[id] === "object") ? map[id] : {};
+        const next = Object.assign({}, cur, patch);
+        if (!next.name && !next.color) delete map[id]; else map[id] = next;
+        saveLabels(map);
+    }
+    function migrateLabel(oldId, newId) {
+        if (!oldId || !newId || oldId === newId) return;
+        const map = loadLabels();
+        if (map[oldId]) { map[newId] = map[oldId]; delete map[oldId]; saveLabels(map); }
+    }
+
     // ── one live session, rendered as a grid tile ─────────────────
     function createPanel(session) {
         let sessionId = session.id;
@@ -179,11 +206,21 @@
         el.innerHTML =
             '<header class="term-panel-head">' +
                 '<button class="term-panel-back term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹</button>' +
+                '<span class="term-panel-dot" hidden aria-hidden="true"></span>' +
                 '<span class="term-panel-info">…</span>' +
+                '<button class="term-panel-rename term-action-btn" type="button" title="rename / recolor this session" aria-label="rename this session">✎</button>' +
                 '<button class="term-panel-speaker term-action-btn" type="button" title="toggle voice playback" aria-pressed="false">speaker off</button>' +
                 '<button class="term-panel-delete term-action-btn term-action-btn-danger" type="button" title="delete this session" hidden>delete</button>' +
                 '<button class="term-panel-close term-action-btn" type="button" title="remove from grid" aria-label="remove from grid">✕</button>' +
             '</header>' +
+            '<div class="term-rename-pop" hidden>' +
+                '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
+                '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
+                '<div class="term-rename-actions">' +
+                    '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
+                    '<button type="button" class="term-action-btn term-rename-save">save</button>' +
+                '</div>' +
+            '</div>' +
             '<div class="term-feed" aria-live="polite"></div>' +
             '<form class="term-input-bar" autocomplete="off">' +
                 '<span class="term-prompt">&gt;</span>' +
@@ -201,6 +238,13 @@
         const closeBtn = el.querySelector(".term-panel-close");
         const backBtn = el.querySelector(".term-panel-back");
         const micBtn = el.querySelector(".term-mic-btn");
+        const renameBtn = el.querySelector(".term-panel-rename");
+        const renamePop = el.querySelector(".term-rename-pop");
+        const renameInput = el.querySelector(".term-rename-input");
+        const renameSwatches = el.querySelector(".term-rename-swatches");
+        const renameSave = el.querySelector(".term-rename-save");
+        const renameClear = el.querySelector(".term-rename-clear");
+        const headDot = el.querySelector(".term-panel-dot");
 
         let eventSource = null;
         let currentAssistantEl = null;
@@ -224,8 +268,81 @@
         const ttsQueue = [];
 
         function setInfo() {
-            info.textContent = (mindName || (mindId || "").slice(0, 8)) + " · " + (session.status || "running");
+            const label = getLabel(sessionId);
+            const base = mindName || (mindId || "").slice(0, 8);
+            const nm = (label.name || "").trim();
+            info.textContent = (nm || base) + " · " + (session.status || "running");
+            info.title = nm ? nm + " · " + base : base;
         }
+
+        // ── custom name + color ───────────────────────────────────
+        let editSelectedColor = "";
+        function applyLabel() {
+            const label = getLabel(sessionId);
+            setInfo();
+            const color = label.color || "";
+            if (color) {
+                el.style.borderColor = color;
+                el.style.borderLeft = "3px solid " + color;
+                headDot.style.background = color;
+                headDot.hidden = false;
+            } else {
+                el.style.borderColor = "";
+                el.style.borderLeft = "";
+                headDot.hidden = true;
+            }
+            renderCards(lastMinds);
+        }
+        function buildSwatches() {
+            renameSwatches.innerHTML = "";
+            LABEL_COLORS.forEach(function (c) {
+                const sw = document.createElement("button");
+                sw.type = "button";
+                sw.className = "term-swatch";
+                sw.style.background = c;
+                sw.dataset.color = c;
+                sw.setAttribute("aria-label", "color " + c);
+                sw.addEventListener("click", function () {
+                    editSelectedColor = (editSelectedColor === c) ? "" : c;
+                    markSwatches();
+                });
+                renameSwatches.appendChild(sw);
+            });
+        }
+        function markSwatches() {
+            Array.from(renameSwatches.children).forEach(function (sw) {
+                sw.classList.toggle("is-selected", sw.dataset.color === editSelectedColor);
+            });
+        }
+        function openRename() {
+            const label = getLabel(sessionId);
+            renameInput.value = label.name || "";
+            editSelectedColor = label.color || "";
+            markSwatches();
+            renamePop.hidden = false;
+            renameInput.focus();
+            renameInput.select();
+        }
+        function closeRename() { renamePop.hidden = true; }
+        function commitRename() {
+            setLabel(sessionId, {name: renameInput.value.trim(), color: editSelectedColor});
+            closeRename();
+            applyLabel();
+        }
+        buildSwatches();
+        renameBtn.addEventListener("click", function () {
+            if (renamePop.hidden) openRename(); else closeRename();
+        });
+        renameSave.addEventListener("click", commitRename);
+        renameClear.addEventListener("click", function () {
+            setLabel(sessionId, {name: "", color: ""});
+            closeRename();
+            applyLabel();
+        });
+        renameInput.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+            else if (e.key === "Escape") { e.preventDefault(); closeRename(); }
+        });
 
         function appendLine(cls, text) {
             currentAssistantEl = null;
@@ -450,7 +567,8 @@
             mindId = succ.mind_id || mindId;
             session.status = succ.status || "running";
             el.dataset.sessionId = sessionId;
-            setInfo();
+            migrateLabel(oldId, sessionId);
+            applyLabel();
             reKey(oldId, sessionId);
             connectStream(sessionId);
             refreshSelector();
@@ -570,7 +688,7 @@
 
         // ── history load + go live ────────────────────────────────
         async function load() {
-            setInfo();
+            applyLabel();
             deleteBtn.hidden = false;
             try {
                 const resp = await fetch("/api/terminal/session/" + sessionId + "/history", {credentials: "same-origin"});
@@ -719,15 +837,19 @@
                 card.dataset.status = s.status || "";
                 card.dataset.summary = s.summary || "";
 
+                const label = getLabel(s.id);
+                if (label.color) card.style.borderLeft = "3px solid " + label.color;
+
                 const dot = document.createElement("span");
                 dot.className = "term-card-dot " + statusDotClass(s.status);
+                if (label.color) dot.style.background = label.color;
 
                 const body = document.createElement("span");
                 body.className = "term-card-body";
                 const title = document.createElement("span");
                 title.className = "term-card-title";
                 title.innerHTML = '<span class="term-card-name"></span> <span class="term-card-id"></span>';
-                title.querySelector(".term-card-name").textContent = mind.name;
+                title.querySelector(".term-card-name").textContent = (label.name || "").trim() || mind.name;
                 title.querySelector(".term-card-id").textContent = s.short_id || (s.id || "").slice(0, 8);
                 const meta = document.createElement("span");
                 meta.className = "term-card-meta";

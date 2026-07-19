@@ -237,6 +237,41 @@ def test_terminal_css_hides_intro_banner_not_nav():
     assert "body:has(.terminal-page) nav{display:none" not in css
 
 
+def test_terminal_page_has_session_rename_and_color_editor(tmp_path, monkeypatch):
+    """Each session tile can be renamed and recolored, persisted client-side."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    # rename/recolor affordance on the panel header + the inline editor
+    assert "term-panel-rename" in body
+    assert "term-rename-input" in body
+    assert "term-swatch" in body
+    # labels persist per session in localStorage and survive rotation
+    assert '"term-labels"' in body
+    assert "migrateLabel" in body
+
+
+def test_terminal_css_has_swatch_and_rename_editor_styles():
+    """The rename editor and color swatches carry their own styling."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+    assert ".term-rename-pop" in css
+    assert ".term-swatch" in css
+    assert ".term-swatch.is-selected" in css
+
+
 def test_terminal_page_has_new_session_and_collapsible_rail(tmp_path, monkeypatch):
     """New-session spawn is back, and the agents rail is collapsible."""
     client = _authed_client(tmp_path, monkeypatch)
