@@ -64,7 +64,7 @@ class _FakeAsyncClient:
     async def __aexit__(self, *args):
         return False
 
-    def stream(self, method, url, headers=None, **kwargs):
+    def stream(self, method, url, headers=None):
         return self._stream_cm
 
 
