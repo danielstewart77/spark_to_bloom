@@ -2,16 +2,35 @@
 {% block content %}
 <link rel="stylesheet" href="{{ request.url_for('static', path='vendor/xterm/xterm.css') }}">
 <main class="terminal-page">
-    <header class="term-bar">
-        <select id="term-session-select" class="term-session-select" aria-label="session"></select>
-        <button id="term-new" class="term-action-btn" type="button" title="start a new session">+ new</button>
-        <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
-        <button id="term-kill" class="term-action-btn term-action-btn-danger" type="button"
-                title="end this session's process (keeps the conversation branch)">end</button>
-        <span id="term-status" class="term-status">loading…</span>
-    </header>
-    <div id="term-new-menu" class="term-new-menu" hidden aria-label="pick a mind"></div>
-    <div id="term-xterm" class="term-xterm"></div>
+    <div class="term-app" id="term-app" data-view="list" data-rail="expanded">
+        <!-- ── Sessions list (the "agents" rail) ────────────────────── -->
+        <section class="term-list-view" id="term-list-view">
+            <header class="term-list-head">
+                <button id="term-rail-collapse" class="term-icon-btn term-rail-btn" type="button"
+                        title="collapse agents sidebar" aria-label="collapse agents sidebar">«</button>
+                <h1 class="term-list-title">Agents</h1>
+                <div class="term-seg" role="tablist" aria-label="session filter">
+                    <button id="term-tab-active" class="term-seg-btn is-active" type="button"
+                            role="tab" aria-selected="true" data-filter="active">Active</button>
+                    <button id="term-tab-archived" class="term-seg-btn" type="button"
+                            role="tab" aria-selected="false" data-filter="archived">Archived</button>
+                </div>
+                <button id="term-new" class="term-action-btn" type="button" title="start a new session">+ new</button>
+                <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
+            </header>
+            <div id="term-new-menu" class="term-new-menu" hidden aria-label="pick a mind"></div>
+            <div id="term-list" class="term-list" aria-live="polite"></div>
+            <p id="term-list-empty" class="term-list-empty" hidden>No sessions.</p>
+        </section>
+
+        <!-- ── Stage: the Brady-Bunch grid of attached terminals ────── -->
+        <section class="term-stage" id="term-stage">
+            <button id="term-rail-expand" class="term-rail-expand" type="button" hidden
+                    title="show agents sidebar" aria-label="show agents sidebar">agents »</button>
+            <div id="term-grid" class="term-grid" data-count="0"></div>
+            <p id="term-grid-empty" class="term-grid-empty">Select a session from the list to open it here.</p>
+        </section>
+    </div>
     <div class="term-mobile-toolbar" id="term-mobile-toolbar" aria-label="terminal keys">
         <button type="button" data-seq="&#x1b;">Esc</button>
         <button type="button" data-seq="&#x09;">Tab</button>
@@ -27,36 +46,85 @@
 (function () {
     "use strict";
 
-    // A true interactive terminal: raw bytes over a WebSocket into a pty
-    // running `claude --resume` inside the owning mind. Not the chat/SSE
-    // pattern — see src/backlog/web-terminal-interface.md.
-    const sel = document.getElementById("term-session-select");
-    const statusEl = document.getElementById("term-status");
-    const xtermEl = document.getElementById("term-xterm");
+    // Interactive pty terminals (raw bytes over WS into `claude --resume`,
+    // see src/backlog/web-terminal-interface.md) inside the session-manager
+    // shell: agents rail, tile grid, per-session labels, TTS speaker. The
+    // speaker rides the watch-only /api/console SSE stream — assistant text
+    // is not recoverable from raw pty bytes.
+    const termApp = document.getElementById("term-app");
+    const listEl = document.getElementById("term-list");
+    const listEmpty = document.getElementById("term-list-empty");
+    const gridEl = document.getElementById("term-grid");
+    const gridEmpty = document.getElementById("term-grid-empty");
+    const refreshBtn = document.getElementById("term-refresh");
     const newBtn = document.getElementById("term-new");
     const newMenu = document.getElementById("term-new-menu");
-    const refreshBtn = document.getElementById("term-refresh");
-    const killBtn = document.getElementById("term-kill");
+    const tabActive = document.getElementById("term-tab-active");
+    const tabArchived = document.getElementById("term-tab-archived");
+    const railCollapseBtn = document.getElementById("term-rail-collapse");
+    const railExpandBtn = document.getElementById("term-rail-expand");
     const toolbar = document.getElementById("term-mobile-toolbar");
 
-    const term = new window.Terminal({
-        convertEol: true,
-        cursorBlink: true,
-        fontSize: 14,
-        scrollback: 5000,
-        theme: { background: "#080f18", foreground: "#dce8f0", cursor: "#c9a84c" },
-    });
-    const fitAddon = new window.FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(xtermEl);
-    fitAddon.fit();
-    window.addEventListener("resize", () => fitAddon.fit());
+    const ACTIVE_STATUSES = new Set(["running", "idle"]);
+    const REATTACH_WINDOW_MS = 30000;
+    const isWide = () => window.matchMedia("(min-width: 860px)").matches;
 
-    let ws = null;
-    let currentSessionId = null;
+    let currentFilter = "active";
+    let lastRows = [];          // flat rows from /api/terminal/sessions
+    const openPanels = new Map(); // sessionId -> panel
+    let focusedPanel = null;
 
-    function setStatus(text) {
-        statusEl.textContent = text;
+    // ── open-set persistence (restore the grid across reloads) ─────
+    function saveOpenSet() {
+        try { localStorage.setItem("term-open", JSON.stringify(Array.from(openPanels.keys()))); } catch (e) {}
+    }
+    function recalledOpenSet() {
+        try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
+    }
+
+    // ── per-session labels (custom name + color), local to this browser ──
+    const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
+    function loadLabels() {
+        try { return JSON.parse(localStorage.getItem("term-labels") || "{}") || {}; } catch (e) { return {}; }
+    }
+    function saveLabels(map) {
+        try { localStorage.setItem("term-labels", JSON.stringify(map)); } catch (e) {}
+    }
+    function getLabel(id) {
+        if (!id) return {};
+        const l = loadLabels()[id];
+        return (l && typeof l === "object") ? l : {};
+    }
+    function setLabel(id, patch) {
+        if (!id) return;
+        const map = loadLabels();
+        const cur = (map[id] && typeof map[id] === "object") ? map[id] : {};
+        const next = Object.assign({}, cur, patch);
+        if (!next.name && !next.color) delete map[id]; else map[id] = next;
+        saveLabels(map);
+    }
+    function migrateLabel(oldId, newId) {
+        if (!oldId || !newId || oldId === newId) return;
+        const map = loadLabels();
+        if (map[oldId]) { map[newId] = map[oldId]; delete map[oldId]; saveLabels(map); }
+    }
+
+    // ── shared content helpers (assistant text out of console SSE) ──
+    function flattenContent(v) {
+        if (v == null) return "";
+        if (typeof v === "string") return v;
+        if (Array.isArray(v)) return v.map(flattenContent).join("");
+        if (typeof v === "object") {
+            if (typeof v.text === "string") return v.text;
+            if (v.content != null) return flattenContent(v.content);
+            return "";
+        }
+        return String(v);
+    }
+    function extractText(event) {
+        const v = event.content || event.delta || event.text ||
+            (event.message && (event.message.content || event.message.text)) || "";
+        return flattenContent(v);
     }
 
     function wsUrl(sessionId) {
@@ -64,138 +132,646 @@
         return proto + "//" + location.host + "/api/terminal/attach/" + encodeURIComponent(sessionId);
     }
 
-    function closeSocket() {
-        if (ws) {
-            const dead = ws;
-            ws = null;
-            dead.onclose = null;
-            try { dead.close(); } catch (err) { /* already closing */ }
+    // ── one live session, rendered as an xterm tile ────────────────
+    function createPanel(session) {
+        let sessionId = session.id;
+        let mindId = session.mind_id || null;
+        let mindName = session.mind_name || null;
+        let attachState = "connecting…";
+
+        const el = document.createElement("section");
+        el.className = "term-panel";
+        el.dataset.sessionId = sessionId;
+        el.innerHTML =
+            '<header class="term-panel-head">' +
+                '<button class="term-panel-back term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹</button>' +
+                '<span class="term-panel-dot" hidden aria-hidden="true"></span>' +
+                '<span class="term-panel-info">…</span>' +
+                '<button class="term-panel-rename term-action-btn" type="button" title="rename / recolor this session" aria-label="rename this session">✎</button>' +
+                '<button class="term-panel-speaker term-action-btn" type="button" title="toggle voice playback" aria-pressed="false">speaker off</button>' +
+                '<button class="term-panel-delete term-action-btn term-action-btn-danger" type="button" ' +
+                    'title="end this session\'s process (keeps the conversation branch)">end</button>' +
+                '<button class="term-panel-close term-action-btn" type="button" title="remove from grid" aria-label="remove from grid">✕</button>' +
+            '</header>' +
+            '<div class="term-rename-pop" hidden>' +
+                '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
+                '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
+                '<div class="term-rename-actions">' +
+                    '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
+                    '<button type="button" class="term-action-btn term-rename-save">save</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="term-xterm"></div>';
+
+        const info = el.querySelector(".term-panel-info");
+        const xtermEl = el.querySelector(".term-xterm");
+        const speakerBtn = el.querySelector(".term-panel-speaker");
+        const deleteBtn = el.querySelector(".term-panel-delete");
+        const closeBtn = el.querySelector(".term-panel-close");
+        const backBtn = el.querySelector(".term-panel-back");
+        const renameBtn = el.querySelector(".term-panel-rename");
+        const renamePop = el.querySelector(".term-rename-pop");
+        const renameInput = el.querySelector(".term-rename-input");
+        const renameSwatches = el.querySelector(".term-rename-swatches");
+        const renameSave = el.querySelector(".term-rename-save");
+        const renameClear = el.querySelector(".term-rename-clear");
+        const headDot = el.querySelector(".term-panel-dot");
+
+        const term = new window.Terminal({
+            convertEol: true,
+            cursorBlink: true,
+            fontSize: 14,
+            scrollback: 5000,
+            theme: { background: "#080f18", foreground: "#dce8f0", cursor: "#c9a84c" },
+        });
+        const fitAddon = new window.FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        let ws = null;
+        let destroyed = false;
+        let deliberateClose = false;
+        let reattachTimer = null;
+        let reattachStartedAt = 0;
+
+        function setInfo() {
+            const label = getLabel(sessionId);
+            const base = mindName || (mindId || "").slice(0, 8);
+            const nm = (label.name || "").trim();
+            info.textContent = (nm || base) + " · " + attachState;
+            info.title = nm ? nm + " · " + base : base;
         }
-    }
-
-    function sendBytes(text) {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(new TextEncoder().encode(text));
+        function setAttachState(state) {
+            attachState = state;
+            setInfo();
         }
-    }
 
-    function attach(sessionId) {
-        closeSocket();
-        currentSessionId = sessionId;
-        term.reset();
-        setStatus("connecting…");
-        const socket = new WebSocket(wsUrl(sessionId));
-        socket.binaryType = "arraybuffer";
-        socket.onopen = () => setStatus("attached");
-        socket.onmessage = (ev) => {
-            term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
-        };
-        socket.onclose = () => {
-            if (ws === socket) ws = null;
-            setStatus("disconnected");
-        };
-        socket.onerror = () => setStatus("connection error");
-        ws = socket;
-    }
+        // ── custom name + color ───────────────────────────────────
+        let editSelectedColor = "";
+        function applyLabel() {
+            const label = getLabel(sessionId);
+            setInfo();
+            const color = label.color || "";
+            if (color) {
+                el.style.borderColor = color;
+                el.style.borderLeft = "3px solid " + color;
+                headDot.style.background = color;
+                headDot.hidden = false;
+            } else {
+                el.style.borderColor = "";
+                el.style.borderLeft = "";
+                headDot.hidden = true;
+            }
+            renderCards(lastRows);
+        }
+        function buildSwatches() {
+            renameSwatches.innerHTML = "";
+            LABEL_COLORS.forEach(function (c) {
+                const sw = document.createElement("button");
+                sw.type = "button";
+                sw.className = "term-swatch";
+                sw.style.background = c;
+                sw.dataset.color = c;
+                sw.setAttribute("aria-label", "color " + c);
+                sw.addEventListener("click", function () {
+                    editSelectedColor = (editSelectedColor === c) ? "" : c;
+                    markSwatches();
+                });
+                renameSwatches.appendChild(sw);
+            });
+        }
+        function markSwatches() {
+            Array.from(renameSwatches.children).forEach(function (sw) {
+                sw.classList.toggle("is-selected", sw.dataset.color === editSelectedColor);
+            });
+        }
+        function openRename() {
+            const label = getLabel(sessionId);
+            renameInput.value = label.name || "";
+            editSelectedColor = label.color || "";
+            markSwatches();
+            renamePop.hidden = false;
+            renameInput.focus();
+            renameInput.select();
+        }
+        function closeRename() { renamePop.hidden = true; }
+        function commitRename() {
+            setLabel(sessionId, {name: renameInput.value.trim(), color: editSelectedColor});
+            closeRename();
+            applyLabel();
+        }
+        buildSwatches();
+        renameBtn.addEventListener("click", function () {
+            if (renamePop.hidden) openRename(); else closeRename();
+        });
+        renameSave.addEventListener("click", commitRename);
+        renameClear.addEventListener("click", function () {
+            setLabel(sessionId, {name: "", color: ""});
+            closeRename();
+            applyLabel();
+        });
+        renameInput.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+            else if (e.key === "Escape") { e.preventDefault(); closeRename(); }
+        });
 
-    term.onData(sendBytes);
+        // ── TTS speaker (assistant text via the console SSE stream) ──
+        const audioEl = new Audio();
+        audioEl.preload = "auto";
+        let speakerOn = false;
+        let ttsSource = null;
+        let ttsBuffer = "";
+        let ttsFlushTimer = null;
+        let ttsPlaying = false;
+        const ttsQueue = [];
 
-    async function loadSessions(preferId) {
-        setStatus("loading sessions…");
-        let rows = [];
-        try {
-            const resp = await fetch("/api/terminal/sessions", { credentials: "same-origin" });
-            if (resp.ok) rows = await resp.json();
-        } catch (err) { /* rows stays empty; message below covers it */ }
+        function loadSpeakerPref() {
+            try { return localStorage.getItem("term-speaker:" + (mindName || "default")) === "on"; }
+            catch (e) { return false; }
+        }
+        function saveSpeakerPref(on) {
+            try { localStorage.setItem("term-speaker:" + (mindName || "default"), on ? "on" : "off"); } catch (e) {}
+        }
+        function setSpeakerLabel() {
+            speakerBtn.textContent = speakerOn ? "speaker on" : "speaker off";
+            speakerBtn.setAttribute("aria-pressed", speakerOn ? "true" : "false");
+            speakerBtn.classList.toggle("term-speaker-on", speakerOn);
+        }
+        function scheduleTtsFlush() {
+            if (ttsFlushTimer) clearTimeout(ttsFlushTimer);
+            ttsFlushTimer = setTimeout(flushTtsNow, 1500);
+        }
+        async function flushTtsNow() {
+            if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+            const text = ttsBuffer.trim();
+            ttsBuffer = "";
+            if (!speakerOn || !text) return;
+            try {
+                const resp = await fetch("/api/terminal/tts", {
+                    method: "POST", credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({text: text, voice_id: mindName || "default"}),
+                });
+                if (!resp.ok) return;
+                const blob = await resp.blob();
+                ttsQueue.push(URL.createObjectURL(blob));
+                playNextTtsClip();
+            } catch (err) {}
+        }
+        function playNextTtsClip() {
+            if (ttsPlaying) return;
+            const url = ttsQueue.shift();
+            if (!url) return;
+            ttsPlaying = true;
+            audioEl.src = url;
+            audioEl.play().catch(function () { ttsPlaying = false; URL.revokeObjectURL(url); });
+            audioEl.onended = function () {
+                URL.revokeObjectURL(url);
+                ttsPlaying = false;
+                playNextTtsClip();
+            };
+        }
+        function openTtsStream() {
+            closeTtsStream();
+            ttsSource = new EventSource("/api/console/" + encodeURIComponent(sessionId) + "/stream");
+            ttsSource.onmessage = function (msg) {
+                let event;
+                try { event = JSON.parse(msg.data); } catch (e) { return; }
+                if (event.type === "assistant") {
+                    const chunk = extractText(event);
+                    if (chunk) { ttsBuffer += chunk; scheduleTtsFlush(); }
+                } else if (event.type === "user" || event.type === "result") {
+                    flushTtsNow();
+                }
+            };
+            // EventSource retries on its own; a dead session just stays silent.
+        }
+        function closeTtsStream() {
+            if (ttsSource) { ttsSource.close(); ttsSource = null; }
+        }
+        function stopTtsPlayback() {
+            ttsBuffer = "";
+            if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
+            ttsQueue.forEach(function (u) { URL.revokeObjectURL(u); });
+            ttsQueue.length = 0;
+            try { audioEl.pause(); audioEl.src = ""; } catch (e) {}
+            ttsPlaying = false;
+        }
+        speakerOn = loadSpeakerPref();
+        setSpeakerLabel();
+        if (speakerOn) openTtsStream();
+        speakerBtn.addEventListener("click", function () {
+            speakerOn = !speakerOn;
+            saveSpeakerPref(speakerOn);
+            setSpeakerLabel();
+            if (speakerOn) openTtsStream();
+            else { closeTtsStream(); stopTtsPlayback(); }
+        });
 
-        sel.innerHTML = "";
-        if (!Array.isArray(rows) || !rows.length) {
-            const opt = document.createElement("option");
-            opt.textContent = "no active sessions — start one with + new";
-            opt.disabled = true;
-            sel.appendChild(opt);
+        // ── pty attach over WS ────────────────────────────────────
+        function closeSocket() {
+            if (ws) {
+                const dead = ws;
+                ws = null;
+                dead.onclose = null;
+                try { dead.close(); } catch (err) { /* already closing */ }
+            }
+        }
+        function attach() {
             closeSocket();
-            currentSessionId = null;
-            setStatus("no sessions");
+            term.reset();
+            setAttachState("connecting…");
+            const socket = new WebSocket(wsUrl(sessionId));
+            socket.binaryType = "arraybuffer";
+            socket.onopen = () => setAttachState("attached");
+            socket.onmessage = (ev) => {
+                term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
+            };
+            socket.onclose = () => {
+                if (ws === socket) ws = null;
+                if (destroyed || deliberateClose) return;
+                // Rotation kills the pty out from under the tile; hunt for
+                // the successor session instead of sitting dead forever.
+                setAttachState("disconnected");
+                beginReattachLoop();
+            };
+            socket.onerror = () => setAttachState("connection error");
+            ws = socket;
+        }
+        term.onData(function (text) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(new TextEncoder().encode(text));
+            }
+        });
+        term.textarea && term.textarea.addEventListener("focus", function () { focusedPanel = panel; });
+        el.addEventListener("mousedown", function () { focusedPanel = panel; });
+
+        // ── rotation reattach ─────────────────────────────────────
+        function cancelReattachLoop() {
+            if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
+        }
+        function beginReattachLoop() {
+            cancelReattachLoop();
+            if (!mindId) return;
+            reattachStartedAt = Date.now();
+            setAttachState("reattaching…");
+            pollForSuccessor();
+        }
+        async function pollForSuccessor() {
+            if (destroyed) return;
+            const deadId = sessionId || "";
+            try {
+                const resp = await fetch("/api/terminal/sessions", {credentials: "same-origin"});
+                if (resp.ok) {
+                    const rows = await resp.json();
+                    const successor = (rows || []).find(function (r) {
+                        return r.mind_id === mindId && r.id !== deadId &&
+                            ACTIVE_STATUSES.has((r.status || "").toLowerCase());
+                    });
+                    if (successor) { attachSuccessor(successor); return; }
+                }
+            } catch (err) {}
+            if (Date.now() - reattachStartedAt >= REATTACH_WINDOW_MS) {
+                setAttachState("disconnected — reopen from the list");
+                return;
+            }
+            reattachTimer = setTimeout(pollForSuccessor, 2000);
+        }
+        function attachSuccessor(succ) {
+            cancelReattachLoop();
+            const oldId = sessionId;
+            sessionId = succ.id;
+            mindId = succ.mind_id || mindId;
+            mindName = succ.mind_name || mindName;
+            el.dataset.sessionId = sessionId;
+            migrateLabel(oldId, sessionId);
+            applyLabel();
+            reKey(oldId, sessionId);
+            if (speakerOn) openTtsStream();
+            attach();
+            refreshSessions();
+        }
+
+        // ── end / close / back ────────────────────────────────────
+        deleteBtn.addEventListener("click", async function () {
+            if (!sessionId) return;
+            if (!confirm("End this session's process? The conversation branch is kept.")) return;
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "ending…";
+            try {
+                const resp = await fetch("/api/terminal/sessions/" + encodeURIComponent(sessionId), {
+                    method: "DELETE", credentials: "same-origin",
+                });
+                if (!resp.ok) {
+                    let msg = "HTTP " + resp.status;
+                    try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch (e) {}
+                    setAttachState("end failed: " + msg);
+                    deleteBtn.disabled = false;
+                    deleteBtn.textContent = "end";
+                    return;
+                }
+                deliberateClose = true;
+                closePanel(panel);
+                await refreshSessions();
+            } catch (err) {
+                setAttachState("end error: " + err.message);
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = "end";
+            }
+        });
+        closeBtn.addEventListener("click", function () { closePanel(panel); });
+        backBtn.addEventListener("click", function () { closePanel(panel); });
+
+        const panel = {
+            el: el,
+            get sessionId() { return sessionId; },
+            mindId: function () { return mindId; },
+            mount: function () {
+                term.open(xtermEl);
+                fitAddon.fit();
+                applyLabel();
+                attach();
+            },
+            fit: function () {
+                try { fitAddon.fit(); } catch (e) {}
+            },
+            focus: function () { focusedPanel = panel; term.focus(); },
+            sendBytes: function (text) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(new TextEncoder().encode(text));
+                }
+            },
+            destroy: function () {
+                destroyed = true;
+                cancelReattachLoop();
+                closeSocket();
+                closeTtsStream();
+                stopTtsPlayback();
+                try { term.dispose(); } catch (e) {}
+                if (el.parentNode) el.parentNode.removeChild(el);
+            },
+        };
+        return panel;
+    }
+
+    // ── grid / stage management ───────────────────────────────────
+    function relayoutGrid() {
+        const n = openPanels.size;
+        gridEl.dataset.count = String(n);
+        gridEmpty.hidden = n > 0;
+        if (n > 0) {
+            const cols = Math.min(n, Math.ceil(Math.sqrt(n)));
+            gridEl.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+        } else {
+            gridEl.style.gridTemplateColumns = "";
+        }
+        // Tile geometry changed for everyone — refit every terminal.
+        requestAnimationFrame(function () {
+            openPanels.forEach(function (p) { p.fit(); });
+        });
+    }
+
+    function reKey(oldId, newId) {
+        if (oldId === newId) return;
+        const panel = openPanels.get(oldId);
+        if (!panel) return;
+        openPanels.delete(oldId);
+        openPanels.set(newId, panel);
+        saveOpenSet();
+        renderCards(lastRows);
+    }
+
+    function closePanel(panel) {
+        openPanels.delete(panel.sessionId);
+        panel.destroy();
+        if (focusedPanel === panel) focusedPanel = null;
+        relayoutGrid();
+        saveOpenSet();
+        renderCards(lastRows);
+        if (!isWide() && openPanels.size === 0) showView("list");
+    }
+
+    function addPanel(session) {
+        const existing = openPanels.get(session.id);
+        if (existing) {
+            existing.focus();
+            if (!isWide()) showView("stage");
             return;
         }
-        for (const row of rows) {
-            const opt = document.createElement("option");
-            opt.value = row.id;
-            opt.textContent = row.mind_name + " · " + row.short_id + " · " + row.status + " · " + row.age +
-                (row.summary ? " · " + row.summary.slice(0, 48) : "");
-            sel.appendChild(opt);
+        // mobile is single-panel: replace whatever's open
+        if (!isWide()) {
+            Array.from(openPanels.values()).forEach(function (p) { openPanels.delete(p.sessionId); p.destroy(); });
         }
-        const pick = preferId && rows.some((r) => r.id === preferId) ? preferId : rows[0].id;
-        sel.value = pick;
-        attach(pick);
+        const panel = createPanel(session);
+        openPanels.set(session.id, panel);
+        gridEl.appendChild(panel.el);
+        relayoutGrid();
+        panel.mount();
+        panel.focus();
+        saveOpenSet();
+        renderCards(lastRows);
+        if (!isWide()) showView("stage");
     }
 
-    sel.addEventListener("change", () => attach(sel.value));
-    refreshBtn.addEventListener("click", () => loadSessions(currentSessionId));
+    function showView(name) { termApp.dataset.view = name; }
 
-    killBtn.addEventListener("click", async () => {
-        if (!currentSessionId) return;
-        if (!confirm("End this session's process? The conversation branch is kept.")) return;
-        await fetch("/api/terminal/sessions/" + encodeURIComponent(currentSessionId), {
-            method: "DELETE", credentials: "same-origin",
-        });
-        closeSocket();
-        await loadSessions(null);
+    window.addEventListener("resize", function () {
+        openPanels.forEach(function (p) { p.fit(); });
     });
 
-    newBtn.addEventListener("click", async () => {
-        if (!newMenu.hidden) {
-            newMenu.hidden = true;
-            return;
+    // ── session list rendering (flat rows grouped by mind) ────────
+    function isActiveStatus(status) { return ACTIVE_STATUSES.has((status || "").toLowerCase()); }
+    function statusDotClass(status) {
+        const s = (status || "").toLowerCase();
+        if (s === "running") return "is-running";
+        if (s === "idle") return "is-idle";
+        return "is-closed";
+    }
+
+    function renderCards(rows) {
+        lastRows = rows || [];
+        listEl.innerHTML = "";
+        let count = 0;
+        const byMind = new Map();
+        lastRows.forEach(function (r) {
+            const key = r.mind_id || r.mind_name || "?";
+            if (!byMind.has(key)) byMind.set(key, {name: r.mind_name || key, rows: []});
+            byMind.get(key).rows.push(r);
+        });
+        byMind.forEach(function (mind) {
+            const sessions = mind.rows.filter(function (s) {
+                const active = isActiveStatus(s.status);
+                return currentFilter === "active" ? active : !active;
+            });
+            if (!sessions.length) return;
+            const group = document.createElement("div");
+            group.className = "term-mind-group";
+            group.textContent = mind.name;
+            listEl.appendChild(group);
+            sessions.forEach(function (s) {
+                const card = document.createElement("button");
+                card.type = "button";
+                card.className = "term-card" + (openPanels.has(s.id) ? " is-current" : "");
+
+                const label = getLabel(s.id);
+                if (label.color) card.style.borderLeft = "3px solid " + label.color;
+
+                const dot = document.createElement("span");
+                dot.className = "term-card-dot " + statusDotClass(s.status);
+                if (label.color) dot.style.background = label.color;
+
+                const body = document.createElement("span");
+                body.className = "term-card-body";
+                const title = document.createElement("span");
+                title.className = "term-card-title";
+                title.innerHTML = '<span class="term-card-name"></span> <span class="term-card-id"></span>';
+                title.querySelector(".term-card-name").textContent = (label.name || "").trim() || s.mind_name || mind.name;
+                title.querySelector(".term-card-id").textContent = s.short_id || (s.id || "").slice(0, 8);
+                const meta = document.createElement("span");
+                meta.className = "term-card-meta";
+                meta.textContent = (s.status || "") + (s.age ? " · " + s.age : "");
+                body.appendChild(title);
+                body.appendChild(meta);
+                if (s.summary) {
+                    const sum = document.createElement("span");
+                    sum.className = "term-card-summary";
+                    sum.textContent = s.summary;
+                    body.appendChild(sum);
+                }
+                card.appendChild(dot);
+                card.appendChild(body);
+                card.addEventListener("click", function () {
+                    addPanel({
+                        id: s.id,
+                        mind_id: s.mind_id,
+                        mind_name: s.mind_name,
+                        status: s.status || "running",
+                    });
+                });
+                listEl.appendChild(card);
+                count += 1;
+            });
+        });
+        listEmpty.hidden = count > 0;
+        listEmpty.textContent = currentFilter === "active" ? "No active sessions." : "No archived sessions.";
+    }
+
+    async function refreshSessions() {
+        try {
+            const resp = await fetch("/api/terminal/sessions", {credentials: "same-origin"});
+            if (!resp.ok) return [];
+            const rows = await resp.json();
+            renderCards(Array.isArray(rows) ? rows : []);
+            return lastRows;
+        } catch (err) {
+            return [];
         }
+    }
+
+    // ── new session ───────────────────────────────────────────────
+    async function spawnSession(mind) {
+        newMenu.hidden = true;
+        try {
+            const resp = await fetch("/api/terminal/sessions", {
+                method: "POST", credentials: "same-origin",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({mind_id: mind.id}),
+            });
+            if (!resp.ok) return;
+            const sess = await resp.json();
+            addPanel({
+                id: sess.id,
+                mind_id: sess.mind_id || mind.id,
+                mind_name: mind.name,
+                status: sess.status || "running",
+            });
+            await refreshSessions();
+        } catch (err) {}
+    }
+    async function toggleNewMenu() {
+        if (!newMenu.hidden) { newMenu.hidden = true; return; }
         newMenu.hidden = false;
         newMenu.textContent = "loading minds…";
         let minds = [];
         try {
-            const resp = await fetch("/api/minds", { credentials: "same-origin" });
+            const resp = await fetch("/api/minds", {credentials: "same-origin"});
             if (resp.ok) minds = await resp.json();
-        } catch (err) { /* minds stays empty; message below covers it */ }
+        } catch (err) {}
+        minds = (Array.isArray(minds) ? minds : []).filter(function (m) { return m && m.id; });
         newMenu.innerHTML = "";
-        if (!Array.isArray(minds) || !minds.length) {
-            newMenu.textContent = "no minds registered";
-            return;
-        }
-        for (const mind of minds) {
+        if (!minds.length) { newMenu.textContent = "no minds registered"; return; }
+        if (minds.length === 1) { spawnSession(minds[0]); return; }
+        minds.forEach(function (m) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "term-new-menu-item";
-            btn.textContent = mind.name || mind.id;
-            btn.addEventListener("click", async () => {
-                newMenu.hidden = true;
-                setStatus("creating session…");
-                try {
-                    const created = await fetch("/api/terminal/sessions", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "same-origin",
-                        body: JSON.stringify({ mind_id: mind.id }),
-                    });
-                    if (!created.ok) {
-                        setStatus("failed to create session");
-                        return;
-                    }
-                    const session = await created.json();
-                    await loadSessions(session.id);
-                } catch (err) {
-                    setStatus("failed to create session");
-                }
-            });
+            btn.textContent = "new · " + (m.name || m.id);
+            btn.addEventListener("click", function () { spawnSession(m); });
             newMenu.appendChild(btn);
+        });
+    }
+    newBtn.addEventListener("click", toggleNewMenu);
+    document.addEventListener("click", function (e) {
+        if (!newMenu.hidden && !newMenu.contains(e.target) && e.target !== newBtn) newMenu.hidden = true;
+    });
+
+    // ── filter tabs ───────────────────────────────────────────────
+    function setFilter(filter) {
+        currentFilter = filter;
+        const activeSel = filter === "active";
+        tabActive.classList.toggle("is-active", activeSel);
+        tabArchived.classList.toggle("is-active", !activeSel);
+        tabActive.setAttribute("aria-selected", activeSel ? "true" : "false");
+        tabArchived.setAttribute("aria-selected", activeSel ? "false" : "true");
+        renderCards(lastRows);
+    }
+    tabActive.addEventListener("click", function () { setFilter("active"); });
+    tabArchived.addEventListener("click", function () { setFilter("archived"); });
+    refreshBtn.addEventListener("click", function () { refreshSessions(); });
+
+    // ── rail collapse (desktop) ───────────────────────────────────
+    function setRail(collapsed) {
+        termApp.dataset.rail = collapsed ? "collapsed" : "expanded";
+        railExpandBtn.hidden = !collapsed;
+        try { localStorage.setItem("term-rail", collapsed ? "collapsed" : "expanded"); } catch (e) {}
+        openPanels.forEach(function (p) { p.fit(); });
+    }
+    railCollapseBtn.addEventListener("click", function () { setRail(true); });
+    railExpandBtn.addEventListener("click", function () { setRail(false); });
+
+    // ── mobile key toolbar (routes to the focused tile) ───────────
+    toolbar.addEventListener("click", function (ev) {
+        const btn = ev.target.closest("button[data-seq]");
+        if (!btn) return;
+        const target = focusedPanel || openPanels.values().next().value;
+        if (target) target.sendBytes(btn.dataset.seq);
+    });
+
+    // ── boot ──────────────────────────────────────────────────────
+    try {
+        if (localStorage.getItem("term-rail") === "collapsed" && isWide()) setRail(true);
+    } catch (e) {}
+
+    showView("list");
+    refreshSessions().then(function (rows) {
+        // Desktop: reopen the previously-open grid (or fall back to the most
+        // recent active session so the stage isn't empty). Mobile lands on
+        // the list.
+        if (!isWide()) return;
+        const active = (rows || []).filter(function (r) { return isActiveStatus(r.status); });
+        const byId = {};
+        active.forEach(function (r) { byId[r.id] = r; });
+        let opened = 0;
+        recalledOpenSet().forEach(function (id) {
+            const hit = byId[id];
+            if (!hit) return;
+            addPanel({id: hit.id, mind_id: hit.mind_id, mind_name: hit.mind_name, status: hit.status});
+            opened += 1;
+        });
+        if (opened === 0 && active.length > 0) {
+            const first = active[0];
+            addPanel({id: first.id, mind_id: first.mind_id, mind_name: first.mind_name, status: first.status});
         }
     });
-
-    toolbar.addEventListener("click", (ev) => {
-        const btn = ev.target.closest("button[data-seq]");
-        if (btn) sendBytes(btn.dataset.seq);
-    });
-
-    loadSessions(null);
 })();
 </script>
 {% endblock %}
