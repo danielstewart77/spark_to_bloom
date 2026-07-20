@@ -514,3 +514,48 @@ def test_api_terminal_selector_returns_grouped_payload(tmp_path, monkeypatch):
     assert len(payload) == 1
     assert payload[0]["name"] == "ada"
     assert payload[0]["sessions"][0]["id"] == "sess-xyz"
+
+
+class _FakeUrlopen:
+    """Captures posted bodies for _create_gateway_session."""
+
+    def __init__(self, captured):
+        self.captured = captured
+
+    def __call__(self, req, timeout=None):
+        self.captured.append(json.loads(req.data.decode("utf-8")))
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps({"id": "new-session"}).encode("utf-8")
+
+
+def test_terminal_session_create_uses_unique_client_ref_per_tile(tmp_path, monkeypatch):
+    """Each tile must get its own active_sessions binding.
+
+    A shared constant client_ref makes every tile collide on the gateway's
+    (client_type, client_ref) primary key, so rotation arms the wrong session
+    and carry-forward memory lands in the wrong tile.
+    """
+    client = _authed_client(tmp_path, monkeypatch)
+    captured = []
+
+    with patch("main.urllib.request.urlopen", _FakeUrlopen(captured)):
+        first = client.post("/api/terminal/session", json={"mind_id": "skippy-id"})
+        second = client.post("/api/terminal/session", json={"mind_id": "skippy-id"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert len(captured) == 2
+
+    refs = [body["client_ref"] for body in captured]
+    assert refs[0] != refs[1], "two tiles shared one client_ref"
+    assert all(ref.startswith("terminal-") for ref in refs)
+    # owner_ref stays the stable surface label; only client_ref is per-tile.
+    assert all(body["owner_ref"] == "terminal" for body in captured)

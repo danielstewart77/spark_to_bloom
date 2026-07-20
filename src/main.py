@@ -693,6 +693,13 @@ async def api_terminal_create_session(request: Request, user: dict = Depends(req
 
 
 async def _create_gateway_session(mind_id: str) -> dict:
+    # client_ref is the primary key of the gateway's active_sessions binding
+    # table, so it has to be unique per terminal tile. A shared constant makes
+    # every open tile overwrite the same row: rotation arms the wrong session
+    # and carry-forward memory lands in a different tile than it was written
+    # for.
+    client_ref = f"terminal-{uuid.uuid4()}"
+
     def _do_post():
         url = f"{_gateway_base_url().rstrip('/')}/sessions"
         data = json.dumps({
@@ -700,7 +707,7 @@ async def _create_gateway_session(mind_id: str) -> dict:
             "model": "sonnet",
             "owner_type": "web",
             "owner_ref": "terminal",
-            "client_ref": "terminal",
+            "client_ref": client_ref,
         }).encode()
         req = urllib.request.Request(
             url, data=data,
