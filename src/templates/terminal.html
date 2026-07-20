@@ -252,11 +252,11 @@
         let reattachStartedAt = 0;
         let sessionWasClosed = false;
         let inFlight = false;
-        let pendingUserText = null;
-        let pendingUserEl = null;
-        let pendingPill = null;
+        const pendingQueue = []; // FIFO of {text, el, pill, sent} — queued while a turn is in flight
         let assistantDoneTimer = null;
         let destroyed = false;
+
+        function queueFront() { return pendingQueue[0] || null; }
 
         // per-panel TTS
         const audioEl = new Audio();
@@ -373,27 +373,34 @@
                 assistantDoneTimer = null;
                 inFlight = false;
                 currentAssistantEl = null;
-                flushQueuedMessage();
+                trySendFront();
             }, ASSISTANT_IDLE_MS);
         }
         function cancelAssistantDone() {
             if (assistantDoneTimer) { clearTimeout(assistantDoneTimer); assistantDoneTimer = null; }
         }
 
-        async function flushQueuedMessage() {
-            if (!pendingUserText || !sessionId) return;
-            const textToSend = pendingUserText;
-            const elToSend = pendingUserEl;
-            pendingUserEl = null; pendingUserText = null;
-            if (pendingPill) { pendingPill.remove(); pendingPill = null; }
-            if (elToSend) elToSend.classList.remove("term-pending");
+        // Sends the oldest queued message once nothing is in flight. Marks it
+        // `sent` so a later idle tick or event doesn't re-POST it while we're
+        // still waiting on the echo/response — the item stays in the queue
+        // (still visibly pending) until the "user" echo event confirms it.
+        async function trySendFront() {
+            if (inFlight || !sessionId) return;
+            const item = queueFront();
+            if (!item || item.sent) return;
+            item.sent = true;
             try {
                 await fetch("/api/console/" + sessionId + "/message", {
                     method: "POST", credentials: "same-origin",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({text: textToSend}),
+                    body: JSON.stringify({text: item.text}),
                 });
-            } catch (err) { appendLine("term-system", "send error: " + err.message); }
+            } catch (err) {
+                appendLine("term-system", "send error: " + err.message);
+                pendingQueue.shift();
+                if (item.el && item.el.parentNode) item.el.remove();
+                trySendFront();
+            }
         }
 
         // ── TTS ───────────────────────────────────────────────────
@@ -464,9 +471,10 @@
         function handleEvent(event) {
             if (event.type === "assistant") {
                 inFlight = true;
-                if (pendingUserEl && !pendingPill) {
-                    pendingPill = makeInterruptPill();
-                    pendingUserEl.appendChild(pendingPill);
+                const front = queueFront();
+                if (front && front.sent && !front.pill) {
+                    front.pill = makeInterruptPill();
+                    front.el.appendChild(front.pill);
                 }
                 const chunk = extractText(event);
                 if (!chunk) return;
@@ -477,10 +485,12 @@
                 scheduleAssistantDone();
             } else if (event.type === "user") {
                 const text = extractText(event);
-                if (pendingUserEl && text === pendingUserText) {
-                    pendingUserEl.classList.remove("term-pending");
-                    if (pendingPill) { pendingPill.remove(); pendingPill = null; }
-                    pendingUserEl = null; pendingUserText = null; inFlight = false;
+                const front = queueFront();
+                if (front && front.sent && text === front.text) {
+                    front.el.classList.remove("term-pending");
+                    if (front.pill) front.pill.remove();
+                    pendingQueue.shift();
+                    trySendFront();
                 } else if (text) {
                     appendLine("term-user", "> " + text);
                 }
@@ -490,12 +500,15 @@
                 inFlight = false;
                 currentAssistantEl = null;
                 flushTtsNow();
-                flushQueuedMessage();
+                trySendFront();
             } else if (event.type === "session_closed") {
                 cancelAssistantDone();
                 currentAssistantEl = null;
                 inFlight = false;
-                pendingUserEl = null; pendingUserText = null; pendingPill = null;
+                // Keep the queue — the old session may never have received
+                // an unconfirmed front item, so mark it unsent and retry
+                // once reattached rather than dropping queued messages.
+                pendingQueue.forEach(function (item) { item.sent = false; });
                 sessionWasClosed = true;
                 disconnectStream();
                 beginReattachLoop();
@@ -572,6 +585,7 @@
             reKey(oldId, sessionId);
             connectStream(sessionId);
             refreshSelector();
+            trySendFront();
         }
 
         // ── interrupt pill ────────────────────────────────────────
@@ -586,25 +600,16 @@
         async function doInterrupt(pill) {
             pill.disabled = true;
             pill.textContent = "interrupting…";
-            const queuedText = pendingUserText;
             const id = sessionId;
             try {
                 await fetch("/api/console/" + id + "/interrupt", {method: "POST", credentials: "same-origin"});
             } catch (e) {
                 pill.disabled = false; pill.textContent = "interrupt"; return;
             }
-            if (queuedText) {
-                try {
-                    await fetch("/api/console/" + id + "/message", {
-                        method: "POST", credentials: "same-origin",
-                        headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({text: queuedText}),
-                    });
-                } catch (err) {
-                    appendLine("term-system", "send error: " + err.message);
-                    if (pendingUserEl) { pendingUserEl.remove(); pendingUserEl = null; pendingUserText = null; pendingPill = null; }
-                }
-            }
+            inFlight = false;
+            const front = queueFront();
+            if (front) front.sent = false;
+            trySendFront();
         }
 
         // ── input ─────────────────────────────────────────────────
@@ -627,28 +632,20 @@
             input.value = "";
             autoGrowInput();
             currentAssistantEl = null;
-            const wasInFlight = inFlight;
-            if (!pendingUserEl) {
-                const lineEl = document.createElement("div");
-                lineEl.className = "term-line term-user term-pending";
-                lineEl.textContent = "> " + text;
-                if (wasInFlight) { pendingPill = makeInterruptPill(); lineEl.appendChild(pendingPill); }
-                feed.appendChild(lineEl);
-                feed.scrollTop = feed.scrollHeight;
-                pendingUserEl = lineEl;
-                pendingUserText = text;
+
+            const lineEl = document.createElement("div");
+            lineEl.className = "term-line term-user term-pending";
+            lineEl.textContent = "> " + text;
+            let pill = null;
+            if (inFlight && pendingQueue.length === 0) {
+                pill = makeInterruptPill();
+                lineEl.appendChild(pill);
             }
-            if (wasInFlight) return;
-            try {
-                await fetch("/api/console/" + sessionId + "/message", {
-                    method: "POST", credentials: "same-origin",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({text: text}),
-                });
-            } catch (err) {
-                appendLine("term-system", "send error: " + err.message);
-                if (pendingUserEl) { pendingUserEl.remove(); pendingUserEl = null; pendingUserText = null; pendingPill = null; }
-            }
+            feed.appendChild(lineEl);
+            feed.scrollTop = feed.scrollHeight;
+            pendingQueue.push({text: text, el: lineEl, pill: pill, sent: false});
+
+            trySendFront();
         });
 
         // ── mic ───────────────────────────────────────────────────
