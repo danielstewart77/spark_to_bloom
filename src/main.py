@@ -839,6 +839,13 @@ async def api_console_stream(session_id: str, user: dict = Depends(require_auth)
     return StreamingResponse(
         _proxy_session_events(session_id),
         media_type="text/event-stream",
+        headers={
+            # SSE must never be buffered by intermediaries — a buffered
+            # stream delivers events in delayed bursts and idle timeouts
+            # sever it mid-turn.
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
