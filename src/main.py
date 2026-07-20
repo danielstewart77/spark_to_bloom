@@ -833,19 +833,84 @@ async def api_terminal_session_history(session_id: str, user: dict = Depends(req
     return data
 
 
+# SSE must never be buffered by intermediaries — a buffered stream delivers
+# events in delayed bursts and idle timeouts sever it mid-turn.
+SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+}
+
+
 @app.get("/api/console/{session_id}/stream")
 async def api_console_stream(session_id: str, user: dict = Depends(require_auth)):
     del user
     return StreamingResponse(
         _proxy_session_events(session_id),
         media_type="text/event-stream",
-        headers={
-            # SSE must never be buffered by intermediaries — a buffered
-            # stream delivers events in delayed bursts and idle timeouts
-            # sever it mid-turn.
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-        },
+        headers=SSE_HEADERS,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hive Glass observability
+# ---------------------------------------------------------------------------
+async def _proxy_gateway_sse(path: str, params: dict | None = None):
+    """Relay a gateway SSE stream, surfacing upstream failures as events."""
+    url = f"{_gateway_base_url().rstrip('/')}{path}"
+    headers = {"Accept": "text/event-stream", **_gateway_headers()}
+    timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("GET", url, headers=headers, params=params or {}) as response:
+                response.raise_for_status()
+                async for raw_line in response.aiter_lines():
+                    line = raw_line.strip()
+                    if line.startswith("data: "):
+                        yield f"{line}\n\n"
+    except httpx.HTTPStatusError as exc:
+        payload = {"type": "error", "detail": f"upstream_error: {exc.response.status_code}"}
+        yield f"data: {json.dumps(payload)}\n\n"
+    except httpx.RequestError as exc:
+        payload = {"type": "error", "detail": f"upstream_error: {exc}"}
+        yield f"data: {json.dumps(payload)}\n\n"
+
+
+@app.get("/glass", response_class=HTMLResponse)
+async def glass_page(request: Request):
+    if not get_current_user_from_request(request):
+        return _login_redirect_for(request)
+    return _render_template(request, "glass.html")
+
+
+@app.get("/api/glass/fleet")
+async def api_glass_fleet(user: dict = Depends(require_auth)):
+    del user
+    return await _gateway_json("/glass/fleet")
+
+
+@app.get("/api/glass/turns")
+async def api_glass_turns(user: dict = Depends(require_auth)):
+    del user
+    return await _gateway_json("/glass/turns")
+
+
+@app.get("/api/glass/stream")
+async def api_glass_stream(user: dict = Depends(require_auth)):
+    del user
+    return StreamingResponse(
+        _proxy_gateway_sse("/glass/stream"),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
+@app.get("/api/glass/logs/{mind_id}")
+async def api_glass_logs(mind_id: str, lines: int = 100, user: dict = Depends(require_auth)):
+    del user
+    return StreamingResponse(
+        _proxy_gateway_sse(f"/glass/logs/{mind_id}", {"lines": lines}),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
     )
 
 

@@ -1,0 +1,290 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="terminal-page glass-page">
+<style>
+.glass-page { max-width: 1100px; margin: 0 auto; padding: 0.5rem; font-family: ui-monospace, "Cascadia Code", Menlo, monospace; }
+.glass-page h2 { font-size: 0.95rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; margin: 1.1rem 0 0.4rem; }
+.glass-fleet { display: flex; gap: 0.6rem; overflow-x: auto; padding-bottom: 0.3rem; }
+.glass-card { min-width: 150px; flex: 0 0 auto; border: 1px solid #2c3a4d; border-radius: 8px; padding: 0.55rem 0.7rem; background: #101823; }
+.glass-card .g-name { font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
+.glass-dot { width: 9px; height: 9px; border-radius: 50%; background: #37d67a; display: inline-block; }
+.glass-card.g-down { border-color: #7a2b2b; }
+.glass-card.g-down .glass-dot { background: #e04747; animation: glassPulse 1.2s infinite; }
+.glass-card .g-meta { font-size: 0.75rem; opacity: 0.75; margin-top: 0.25rem; line-height: 1.5; }
+.glass-lanes { display: flex; flex-direction: column; gap: 0.45rem; }
+.glass-lane { border: 1px solid #22303f; border-radius: 8px; padding: 0.45rem 0.6rem; background: #0d141d; cursor: pointer; }
+.glass-lane .g-head { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; flex-wrap: wrap; }
+.glass-lane .g-preview { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.glass-segs { display: flex; gap: 4px; margin-top: 0.4rem; }
+.glass-seg { flex: 1; height: 8px; border-radius: 4px; background: #1d2a38; }
+.glass-seg.g-done { background: #2f8f5b; }
+.glass-seg.g-err { background: #e04747; }
+.glass-seg.g-stuck { background: #e04747; animation: glassPulse 1s infinite; }
+@keyframes glassPulse { 50% { opacity: 0.35; } }
+.glass-lane .g-detail { display: none; margin-top: 0.5rem; font-size: 0.75rem; line-height: 1.6; opacity: 0.9; }
+.glass-lane.g-open .g-detail { display: block; }
+.glass-actions { margin-top: 0.4rem; display: none; gap: 0.5rem; }
+.glass-lane.g-open .glass-actions { display: flex; }
+.glass-btn { font: inherit; font-size: 0.75rem; padding: 0.25rem 0.7rem; border-radius: 6px; border: 1px solid #3a4c61; background: #16202c; color: inherit; cursor: pointer; }
+.glass-btn:hover { background: #1e2b3a; }
+.glass-logbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.4rem; }
+.glass-logbar select, .glass-logbar input { font: inherit; font-size: 0.8rem; background: #101823; color: inherit; border: 1px solid #2c3a4d; border-radius: 6px; padding: 0.25rem 0.5rem; }
+.glass-log { border: 1px solid #22303f; border-radius: 8px; background: #0a1017; height: 320px; overflow-y: auto; padding: 0.5rem 0.6rem; font-size: 0.72rem; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
+.glass-empty { opacity: 0.55; font-size: 0.8rem; padding: 0.4rem 0; }
+</style>
+
+<h2>Fleet</h2>
+<div id="glass-fleet" class="glass-fleet"><div class="glass-empty">loading…</div></div>
+
+<h2>Turns</h2>
+<div id="glass-lanes" class="glass-lanes"><div class="glass-empty">no turns yet</div></div>
+
+<h2>Logs</h2>
+<div class="glass-logbar">
+    <select id="glass-log-mind"><option value="">pick a mind…</option></select>
+    <button id="glass-log-toggle" class="glass-btn" type="button">start tail</button>
+    <input id="glass-log-filter" type="text" placeholder="filter…" />
+</div>
+<div id="glass-log" class="glass-log"></div>
+
+<script>
+(function () {
+    "use strict";
+    const STALL_MS = 60000;
+    const SEGS = ["received", "dispatched", "first_output", "replied"];
+    const fleetEl = document.getElementById("glass-fleet");
+    const lanesEl = document.getElementById("glass-lanes");
+    const logEl = document.getElementById("glass-log");
+    const logMind = document.getElementById("glass-log-mind");
+    const logToggle = document.getElementById("glass-log-toggle");
+    const logFilter = document.getElementById("glass-log-filter");
+
+    // ── fleet ─────────────────────────────────────────────────────
+    function ago(ts) {
+        if (!ts) return "never";
+        const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+        if (s < 60) return s + "s ago";
+        if (s < 3600) return Math.floor(s / 60) + "m ago";
+        return Math.floor(s / 3600) + "h ago";
+    }
+    async function refreshFleet() {
+        try {
+            const resp = await fetch("/api/glass/fleet", {credentials: "same-origin"});
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const minds = data.minds || [];
+            fleetEl.innerHTML = "";
+            const selected = logMind.value;
+            logMind.innerHTML = '<option value="">pick a mind…</option>';
+            for (const m of minds) {
+                const card = document.createElement("div");
+                card.className = "glass-card" + (m.healthy ? "" : " g-down");
+                card.innerHTML = '<div class="g-name"><span class="glass-dot"></span></div><div class="g-meta"></div>';
+                card.querySelector(".g-name").appendChild(document.createTextNode(m.name || m.mind_id.slice(0, 8)));
+                card.querySelector(".g-meta").textContent =
+                    (m.healthy ? "healthy" : "UNREACHABLE") + "\n" +
+                    m.open_sessions + " open · " + ago(m.last_active);
+                fleetEl.appendChild(card);
+                const opt = document.createElement("option");
+                opt.value = m.mind_id;
+                opt.textContent = m.name || m.mind_id.slice(0, 8);
+                logMind.appendChild(opt);
+            }
+            if (selected) logMind.value = selected;
+        } catch (e) {}
+    }
+
+    // ── turn lanes ────────────────────────────────────────────────
+    // lane key: session_id + received-hop ts. Later hops attach to the
+    // newest lane of their session.
+    const lanes = [];      // newest first, capped
+    const laneBySession = {};
+    function laneFor(ev) {
+        if (ev.hop === "received" || !laneBySession[ev.session_id]) {
+            const lane = {session: ev.session_id, mind: ev.mind_id, start: ev.ts,
+                          hops: {}, preview: ev.preview || "", error: null, events: []};
+            lanes.unshift(lane);
+            if (lanes.length > 25) {
+                const dropped = lanes.pop();
+                if (laneBySession[dropped.session] === dropped) delete laneBySession[dropped.session];
+            }
+            laneBySession[ev.session_id] = lane;
+            return lane;
+        }
+        return laneBySession[ev.session_id];
+    }
+    function applyEvent(ev) {
+        if (!ev.hop || ev.hop === "ping") return;
+        const lane = laneFor(ev);
+        lane.hops[ev.hop] = ev.ts;
+        lane.events.push(ev);
+        if (ev.hop === "error") lane.error = ev.detail || "error";
+        if (ev.hop === "replied" && ev.is_error) lane.error = "turn ended with is_error";
+        if (ev.mind_id) lane.mind = ev.mind_id;
+        if (ev.preview) lane.preview = ev.preview;
+    }
+    function fmtClock(ts) {
+        return new Date(ts * 1000).toLocaleTimeString([], {hour12: false});
+    }
+    function renderLanes() {
+        lanesEl.innerHTML = "";
+        if (!lanes.length) {
+            lanesEl.innerHTML = '<div class="glass-empty">no turns yet</div>';
+            return;
+        }
+        const now = Date.now() / 1000;
+        for (const lane of lanes) {
+            const el = document.createElement("div");
+            el.className = "glass-lane" + (lane.open ? " g-open" : "");
+            const head = document.createElement("div");
+            head.className = "g-head";
+            const label = (lane.mind || "?").slice(0, 12) + " · " + lane.session.slice(0, 8) + " · " + fmtClock(lane.start);
+            const preview = document.createElement("span");
+            preview.className = "g-preview";
+            preview.textContent = lane.preview;
+            const tag = document.createElement("span");
+            tag.textContent = label;
+            head.appendChild(tag);
+            head.appendChild(preview);
+            el.appendChild(head);
+
+            const segs = document.createElement("div");
+            segs.className = "glass-segs";
+            const done = !!lane.hops.replied;
+            const stalled = !done && !lane.error && (now - lane.start) * 1000 > STALL_MS;
+            SEGS.forEach(function (name, i) {
+                const seg = document.createElement("div");
+                seg.className = "glass-seg";
+                if (lane.hops[name]) seg.classList.add("g-done");
+                else if (lane.error) seg.classList.add("g-err");
+                else if (stalled && (i === 0 || lane.hops[SEGS[i - 1]])) seg.classList.add("g-stuck");
+                seg.title = name;
+                segs.appendChild(seg);
+            });
+            el.appendChild(segs);
+
+            const detail = document.createElement("div");
+            detail.className = "g-detail";
+            detail.textContent = lane.events.map(function (ev) {
+                let line = fmtClock(ev.ts) + "  " + ev.hop;
+                if (ev.elapsed != null) line += "  " + ev.elapsed + "s";
+                if (ev.detail) line += "  " + ev.detail;
+                if (ev.reason) line += "  (" + ev.reason + ")";
+                return line;
+            }).join("\n");
+            el.appendChild(detail);
+
+            const actions = document.createElement("div");
+            actions.className = "glass-actions";
+            const interruptBtn = document.createElement("button");
+            interruptBtn.className = "glass-btn";
+            interruptBtn.type = "button";
+            interruptBtn.textContent = "interrupt";
+            interruptBtn.addEventListener("click", function (e) {
+                e.stopPropagation();
+                fetch("/api/console/" + lane.session + "/interrupt", {method: "POST", credentials: "same-origin"});
+            });
+            const killBtn = document.createElement("button");
+            killBtn.className = "glass-btn";
+            killBtn.type = "button";
+            killBtn.textContent = "kill session";
+            killBtn.addEventListener("click", function (e) {
+                e.stopPropagation();
+                if (!confirm("Kill session " + lane.session.slice(0, 8) + "? The surface will pick up a fresh one.")) return;
+                fetch("/api/terminal/session/" + lane.session, {method: "DELETE", credentials: "same-origin"});
+            });
+            actions.appendChild(interruptBtn);
+            actions.appendChild(killBtn);
+            el.appendChild(actions);
+
+            el.addEventListener("click", function () {
+                lane.open = !lane.open;
+                renderLanes();
+            });
+            lanesEl.appendChild(el);
+        }
+    }
+
+    let turnSource = null;
+    let turnReconnectTimer = null;
+    function connectTurns() {
+        if (turnSource) turnSource.close();
+        turnSource = new EventSource("/api/glass/stream");
+        turnSource.onmessage = function (msg) {
+            try { applyEvent(JSON.parse(msg.data)); renderLanes(); } catch (e) {}
+        };
+        turnSource.onerror = function () {
+            if (turnReconnectTimer) return;
+            turnReconnectTimer = setTimeout(function () {
+                turnReconnectTimer = null;
+                primeTurns();
+            }, 3000);
+        };
+    }
+    async function primeTurns() {
+        try {
+            const resp = await fetch("/api/glass/turns", {credentials: "same-origin"});
+            if (resp.ok) {
+                const data = await resp.json();
+                lanes.length = 0;
+                for (const k in laneBySession) delete laneBySession[k];
+                (data.turns || []).forEach(applyEvent);
+                renderLanes();
+            }
+        } catch (e) {}
+        connectTurns();
+    }
+
+    // ── log tail ──────────────────────────────────────────────────
+    let logSource = null;
+    const logLines = [];
+    function renderLog() {
+        const q = logFilter.value.trim().toLowerCase();
+        const shown = q ? logLines.filter(function (l) { return l.toLowerCase().includes(q); }) : logLines;
+        logEl.textContent = shown.join("\n");
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+    function stopLog() {
+        if (logSource) { logSource.close(); logSource = null; }
+        logToggle.textContent = "start tail";
+    }
+    function startLog() {
+        stopLog();
+        const mind = logMind.value;
+        if (!mind) return;
+        logLines.length = 0;
+        renderLog();
+        logSource = new EventSource("/api/glass/logs/" + encodeURIComponent(mind) + "?lines=100");
+        logSource.onmessage = function (msg) {
+            try {
+                const ev = JSON.parse(msg.data);
+                if (ev.type === "log") {
+                    logLines.push(ev.line);
+                    if (logLines.length > 2000) logLines.splice(0, logLines.length - 2000);
+                    renderLog();
+                } else if (ev.type === "error") {
+                    logLines.push("<" + ev.detail + ">");
+                    renderLog();
+                }
+            } catch (e) {}
+        };
+        logToggle.textContent = "stop tail";
+    }
+    logToggle.addEventListener("click", function () {
+        if (logSource) stopLog(); else startLog();
+    });
+    logMind.addEventListener("change", function () { if (logSource) startLog(); });
+    logFilter.addEventListener("input", renderLog);
+
+    // ── boot ──────────────────────────────────────────────────────
+    refreshFleet();
+    setInterval(refreshFleet, 15000);
+    setInterval(renderLanes, 5000);  // re-evaluate stall highlighting
+    primeTurns();
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") { refreshFleet(); primeTurns(); }
+    });
+})();
+</script>
+</main>
+{% endblock %}
