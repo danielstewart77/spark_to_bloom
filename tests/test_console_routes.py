@@ -229,12 +229,56 @@ def test_terminal_page_renders_xterm_shell(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     body = response.text
-    assert 'id="term-xterm"' in body
-    assert 'id="term-session-select"' in body
     assert "vendor/xterm/xterm.js" in body
     assert "vendor/xterm/addon-fit.js" in body
     assert "/api/terminal/attach/" in body
     assert "/api/terminal/sessions" in body
+
+
+def test_terminal_page_renders_session_manager_shell(tmp_path, monkeypatch):
+    """The xterm tiles live inside the session-manager shell: agents rail,
+    Brady-Bunch grid, rename/recolor editor, TTS speaker, mobile toolbar."""
+    client = _authed_client(tmp_path, monkeypatch)
+    response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    # agents rail with filter tabs and collapse/expand
+    assert 'id="term-list-view"' in body
+    assert 'id="term-list"' in body
+    assert 'id="term-tab-active"' in body
+    assert 'id="term-tab-archived"' in body
+    assert 'id="term-rail-collapse"' in body
+    assert 'id="term-rail-expand"' in body
+    # tile grid stage
+    assert 'id="term-grid"' in body
+    assert 'id="term-grid-empty"' in body
+    # per-session rename/recolor editor (JS-built panel markup)
+    assert "term-rename-pop" in body
+    assert "term-rename-swatches" in body
+    assert "term-labels" in body
+    # TTS speaker wired to the console SSE stream + tts proxy
+    assert "term-panel-speaker" in body
+    assert "/api/terminal/tts" in body
+    assert "/api/console/" in body
+    # mobile keys toolbar
+    assert 'id="term-mobile-toolbar"' in body
+
+
+def test_terminal_css_keeps_rail_grid_and_speaker_styles():
+    """The reintegrated shell needs its styles: collapsible rail, grid tiles,
+    swatch editor, speaker-on state, and mobile view switching."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+    assert '.term-app[data-rail="collapsed"]' in css
+    assert ".term-grid" in css
+    assert ".term-swatch" in css
+    assert ".term-speaker-on" in css
+    assert '.term-app[data-view="list"]' in css
+    assert ".term-card-dot" in css
 
 
 def test_terminal_page_redirects_when_unauthenticated(tmp_path, monkeypatch):
