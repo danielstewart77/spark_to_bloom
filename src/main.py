@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+import websockets
+from websockets.exceptions import WebSocketException
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
@@ -495,64 +497,7 @@ async def graph(request: Request):
 async def terminal(request: Request):
     if not get_current_user_from_request(request):
         return _login_redirect_for(request)
-    try:
-        minds = await _gateway_json("/broker/minds")
-        if not isinstance(minds, list):
-            minds = []
-        minds = [m for m in minds if isinstance(m, dict)]
-        minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
-    except Exception:
-        minds = []
-    try:
-        all_sessions = await _gateway_json("/sessions")
-        if not isinstance(all_sessions, list):
-            all_sessions = []
-    except Exception:
-        all_sessions = []
-    selector_minds = _build_terminal_selector(minds, all_sessions)
-    return _render_template(
-        request,
-        "terminal.html",
-        minds=minds,
-        selector_minds=selector_minds,
-    )
-
-
-def _build_terminal_selector(minds: list[dict], sessions: list[dict]) -> list[dict]:
-    now = int(time.time())
-    by_mind: dict[str, list[dict]] = {}
-    for session in sessions:
-        if not isinstance(session, dict):
-            continue
-        if session.get("owner_type") == "scheduler":
-            continue
-        mind_id = session.get("mind_id") or ""
-        if not mind_id:
-            continue
-        by_mind.setdefault(mind_id, []).append(session)
-    enriched: list[dict] = []
-    for mind in minds:
-        mind_id = mind.get("id") or ""
-        mind_name = mind.get("name") or "mind"
-        mind_sessions = by_mind.get(mind_id, [])
-        mind_sessions.sort(key=lambda s: -float(s.get("last_active", 0) or 0))
-        mind_sessions = mind_sessions[:30]
-        enriched.append({
-            "id": mind_id,
-            "name": mind_name,
-            "sessions": [
-                {
-                    "id": s.get("id"),
-                    "short_id": (s.get("id") or "")[:8],
-                    "status": s.get("status"),
-                    "last_active": s.get("last_active"),
-                    "age": _relative_age(now, s.get("last_active")),
-                    "summary": (s.get("summary") or "").strip(),
-                }
-                for s in mind_sessions
-            ],
-        })
-    return enriched
+    return _render_template(request, "terminal.html")
 
 
 def _relative_age(now: int, last_active) -> str:
@@ -567,26 +512,6 @@ def _relative_age(now: int, last_active) -> str:
     if seconds < 86400:
         return f"{seconds // 3600}h ago"
     return f"{seconds // 86400}d ago"
-
-
-@app.get("/api/terminal/selector")
-async def api_terminal_selector(user: dict = Depends(require_auth)):
-    del user
-    try:
-        minds = await _gateway_json("/broker/minds")
-        if not isinstance(minds, list):
-            minds = []
-        minds = [m for m in minds if isinstance(m, dict)]
-        minds.sort(key=lambda m: (0 if m.get("name") == "ada" else 1, m.get("name", "")))
-    except Exception:
-        minds = []
-    try:
-        all_sessions = await _gateway_json("/sessions")
-        if not isinstance(all_sessions, list):
-            all_sessions = []
-    except Exception:
-        all_sessions = []
-    return _build_terminal_selector(minds, all_sessions)
 
 
 def _voice_api_url() -> str:
@@ -626,64 +551,52 @@ async def api_terminal_tts(request: Request, user: dict = Depends(require_auth))
     return Response(content=audio, media_type=ctype)
 
 
-@app.get("/api/terminal/active")
-async def api_terminal_active(
-    mind_id: str,
-    exclude: str = "",
-    user: dict = Depends(require_auth),
-):
-    """Return the most-recent live session for the given mind without auto-creating.
+@app.get("/api/terminal/sessions")
+async def api_terminal_sessions(user: dict = Depends(require_auth)):
+    """Flat, mind-labeled session list — the /terminal session picker.
 
-    Used by the browser to seamlessly reattach when a session rotates out from
-    under it. Excludes the dying session via ``exclude=<session_id>`` so the
-    browser doesn't immediately reattach to the corpse during the rotation
-    window. Returns 204 when no live successor exists yet.
+    Each row is "drop into this conversation," not "pick a mind": mind name,
+    short mind_id, age, and status, sorted most-recently-active first.
     """
     del user
     try:
+        minds = await _gateway_json("/broker/minds")
+        if not isinstance(minds, list):
+            minds = []
+    except Exception:
+        minds = []
+    mind_names = {m.get("id"): m.get("name", "mind") for m in minds if isinstance(m, dict)}
+
+    try:
         sessions = await _gateway_json("/sessions")
+        if not isinstance(sessions, list):
+            sessions = []
     except Exception:
         sessions = []
-    if not isinstance(sessions, list):
-        sessions = []
+
     now = int(time.time())
-    cutoff = now - 86400
-    live = [
-        s for s in sessions
-        if isinstance(s, dict)
-        and s.get("mind_id") == mind_id
-        and s.get("id") != exclude
-        and int(s.get("last_active", 0)) >= cutoff
-        and s.get("status") in ("running", "idle")
-    ]
-    if not live:
-        return Response(status_code=204)
-    live.sort(key=lambda s: -float(s.get("last_active", 0)))
-    return live[0]
+    rows = []
+    for s in sessions:
+        if not isinstance(s, dict) or s.get("owner_type") == "scheduler":
+            continue
+        mind_id = s.get("mind_id") or ""
+        rows.append({
+            "id": s.get("id"),
+            "mind_id": mind_id,
+            "mind_name": mind_names.get(mind_id, mind_id or "mind"),
+            "short_id": (s.get("id") or "")[:8],
+            "status": s.get("status"),
+            "last_active": s.get("last_active"),
+            "age": _relative_age(now, s.get("last_active")),
+            "summary": (s.get("summary") or "").strip(),
+        })
+    rows.sort(key=lambda r: -float(r.get("last_active") or 0))
+    return rows
 
 
-@app.get("/api/terminal/session")
-async def api_terminal_get_session(mind_id: str, user: dict = Depends(require_auth)):
-    del user
-    sessions = await _gateway_json("/sessions")
-    if not isinstance(sessions, list):
-        sessions = []
-    now = int(time.time())
-    cutoff = now - 86400
-    active = [
-        s for s in sessions
-        if s.get("mind_id") == mind_id
-        and int(s.get("last_active", 0)) >= cutoff
-        and s.get("status") in ("running", "idle")
-    ]
-    active.sort(key=lambda s: -float(s.get("last_active", 0)))
-    if active:
-        return active[0]
-    return await _create_gateway_session(mind_id)
-
-
-@app.post("/api/terminal/session")
+@app.post("/api/terminal/sessions")
 async def api_terminal_create_session(request: Request, user: dict = Depends(require_auth)):
+    """The "new session against mind X" affordance for when nothing relevant is live."""
     del user
     body = await request.json()
     mind_id = (body.get("mind_id") or "").strip()
@@ -824,13 +737,68 @@ async def api_memory_rows(
     }
 
 
-@app.get("/api/terminal/session/{session_id}/history")
-async def api_terminal_session_history(session_id: str, user: dict = Depends(require_auth)):
-    del user
-    data = await _gateway_json(f"/sessions/{session_id}/history")
-    if data is None:
-        return {"session_id": session_id, "messages": []}
-    return data
+def _gateway_ws_url(session_id: str) -> str:
+    ws_base = _gateway_base_url().rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
+    return f"{ws_base}/sessions/{session_id}/attach"
+
+
+async def _pump_terminal_ws(browser_ws: WebSocket, mind_ws) -> None:
+    """Bridge raw bytes between the browser's terminal WS and hive-comms' attach WS.
+
+    Whichever side closes first ends the bridge — an attached pty and a
+    browser tab have no independent life of their own once either end is gone.
+    """
+    async def browser_to_mind() -> None:
+        while True:
+            msg = await browser_ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                return
+            data = msg.get("bytes")
+            if data is None and msg.get("text") is not None:
+                data = msg["text"].encode()
+            if data:
+                await mind_ws.send(data)
+
+    async def mind_to_browser() -> None:
+        async for data in mind_ws:
+            if isinstance(data, str):
+                data = data.encode()
+            await browser_ws.send_bytes(data)
+
+    tasks = [asyncio.ensure_future(browser_to_mind()), asyncio.ensure_future(mind_to_browser())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        for task in tasks:
+            task.cancel()
+
+
+@app.websocket("/api/terminal/attach/{session_id}")
+async def ws_terminal_attach(websocket: WebSocket, session_id: str):
+    """Reverse-proxy a browser terminal WS into hive-comms' session attach.
+
+    True interactive terminal, not the chat-pattern SSE the /console page
+    uses — see src/backlog/web-terminal-interface.md. Gated by the same
+    session cookie as every other page here; unlike /ws/canvas's degrade
+    -to-read-only pattern, an unauthenticated caller is rejected outright
+    since this is full shell access.
+    """
+    user = get_current_user_from_request(websocket)
+    if user is None:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+    try:
+        async with websockets.connect(
+            _gateway_ws_url(session_id),
+            additional_headers=_gateway_headers(),
+        ) as mind_ws:
+            await _pump_terminal_ws(websocket, mind_ws)
+    except (OSError, WebSocketException):
+        await websocket.close(code=1011, reason="terminal unreachable")
 
 
 @app.get("/api/console/{session_id}/stream")
@@ -883,7 +851,7 @@ async def api_console_send_message(
     return {"status": "sent"}
 
 
-@app.delete("/api/terminal/session/{session_id}")
+@app.delete("/api/terminal/sessions/{session_id}")
 async def api_terminal_session_delete(session_id: str, user: dict = Depends(require_auth)):
     del user
 

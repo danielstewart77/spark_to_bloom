@@ -1,13 +1,14 @@
-"""Route tests for login and live console endpoints."""
+"""Route tests for login, the /console SSE proxy, and the /terminal pty attach."""
 
 import asyncio
 import json
 import os
 import sys
 import urllib.error
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
+import pytest
 from starlette.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -94,6 +95,9 @@ def test_login_sets_cookie_and_redirects(tmp_path, monkeypatch):
     assert auth.SESSION_COOKIE_NAME in response.cookies
 
 
+# --- /console SSE proxy (untouched by the terminal rewrite) ----------------
+
+
 def test_console_stream_proxies_sse(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 
@@ -139,172 +143,42 @@ def test_proxy_session_events_preserves_real_session_closed():
     ]
 
 
-def test_build_terminal_selector_groups_active_sessions_per_mind():
-    now = int(__import__("time").time())
-    minds = [
-        {"id": "ada-id", "name": "ada"},
-        {"id": "bilby-id", "name": "bilby"},
+def test_console_stream_sets_anti_buffering_headers(tmp_path, monkeypatch):
+    """SSE must carry no-cache/no-transform + X-Accel-Buffering headers so
+    intermediaries (Cloudflare) neither buffer nor transform the stream —
+    buffered SSE arrives in delayed bursts and loses events on idle cuts."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_proxy(session_id):
+        yield "data: {\"type\":\"ping\"}\n\n"
+
+    with patch("main._proxy_session_events", side_effect=fake_proxy):
+        response = client.get("/api/console/sess-1/stream")
+
+    assert response.status_code == 200
+    assert "no-cache" in response.headers["cache-control"]
+    assert "no-transform" in response.headers["cache-control"]
+    assert response.headers["x-accel-buffering"] == "no"
+
+
+def test_proxy_session_events_passes_ping_through():
+    """Gateway heartbeat pings must reach the browser to keep the SSE
+    connection warm through proxy idle timeouts."""
+    lines = [
+        'data: {"type":"ping","session_id":"sess-1"}',
+        "",
+        'data: {"type":"assistant","content":"hi"}',
+        "",
     ]
-    sessions = [
-        {"id": "sess-1", "mind_id": "ada-id", "status": "running", "last_active": now - 30, "summary": "hello world"},
-        {"id": "sess-2", "mind_id": "ada-id", "status": "closed", "last_active": now - 60, "summary": ""},
-        {"id": "sess-3", "mind_id": "ada-id", "status": "idle", "last_active": now - 90, "summary": "older"},
-        {"id": "sess-4", "mind_id": "bilby-id", "status": "running", "last_active": now - 86500, "summary": "too old"},
-        {"id": "sess-5", "mind_id": "unknown-id", "status": "running", "last_active": now - 10, "summary": "orphan"},
-    ]
-    out = main_mod._build_terminal_selector(minds, sessions)
-    assert len(out) == 2
-    ada = out[0]
-    assert ada["name"] == "ada"
-    # All statuses are now shown (closed is no longer filtered out); sorted by last_active desc
-    assert [s["id"] for s in ada["sessions"]] == ["sess-1", "sess-2", "sess-3"]
-    assert ada["sessions"][0]["short_id"] == "sess-1"[:8]
-    assert ada["sessions"][0]["age"].endswith("ago")
-    bilby = out[1]
-    assert bilby["name"] == "bilby"
-    # sess-4 is now included (no time cutoff)
-    assert [s["id"] for s in bilby["sessions"]] == ["sess-4"]
+    stream_cm = _FakeStreamResponse(lines)
+    fake_client = _FakeAsyncClient(stream_cm)
+    with patch("main.httpx.AsyncClient", return_value=fake_client):
+        events = asyncio.run(_collect(main_mod._proxy_session_events("sess-1")))
+
+    assert events[0] == 'data: {"type":"ping","session_id":"sess-1"}\n\n'
 
 
-def test_terminal_page_renders_selector_with_session_options(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        if path == "/sessions":
-            return [
-                {"id": "sess-abcdef123", "mind_id": "ada-id", "status": "running",
-                 "last_active": now - 5, "summary": "do the thing"},
-            ]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    assert 'value="new:ada-id"' in body
-    assert 'value="session:sess-abcdef123"' in body
-    assert "do the thing" in body
-
-
-def test_terminal_page_has_mobile_session_manager(tmp_path, monkeypatch):
-    """The redesigned page ships the agents rail + Brady-Bunch grid stage."""
-    client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        if path == "/sessions":
-            return [
-                {"id": "sess-live", "mind_id": "ada-id", "status": "running",
-                 "last_active": now - 5, "summary": "hi"},
-            ]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    # app shell: list view starts foremost on mobile
-    assert 'id="term-app"' in body and 'data-view="list"' in body
-    # session list container + active/archived filter
-    assert 'id="term-list"' in body
-    assert 'id="term-tab-active"' in body and 'id="term-tab-archived"' in body
-    # the grid stage holds the open session tiles
-    assert 'id="term-stage"' in body and 'id="term-grid"' in body
-    # each tile carries a mobile back control (JS-built panel markup)
-    assert "term-panel-back" in body
-    # server-rendered data seed still carries the session (JS builds cards from it)
-    assert 'value="session:sess-live"' in body
-
-
-def test_terminal_css_hides_intro_banner_not_nav():
-    """The terminal page hides the personal intro banner but keeps the nav bar."""
-    css_path = os.path.join(
-        os.path.dirname(__file__), "..", "src", "static", "style.css"
-    )
-    with open(css_path, encoding="utf-8") as fh:
-        css = fh.read()
-    # intro/footer terminal-box is hidden on the terminal page
-    assert "body:has(.terminal-page) .content-wrapper > .terminal-box" in css
-    # the nav bar must NOT be hidden on the terminal page (regression guard)
-    assert "body:has(.terminal-page) nav { display: none" not in css
-    assert "body:has(.terminal-page) nav{display:none" not in css
-
-
-def test_terminal_page_has_session_rename_and_color_editor(tmp_path, monkeypatch):
-    """Each session tile can be renamed and recolored, persisted client-side."""
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path, *a, **kw):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    # rename/recolor affordance on the panel header + the inline editor
-    assert "term-panel-rename" in body
-    assert "term-rename-input" in body
-    assert "term-swatch" in body
-    # labels persist per session in localStorage and survive rotation
-    assert '"term-labels"' in body
-    assert "migrateLabel" in body
-
-
-def test_terminal_css_hides_grid_placeholder_when_set():
-    """The 'select a session' placeholder must obey [hidden] (its class sets
-    display:flex, which would otherwise beat the attribute and keep it on
-    screen behind open tiles)."""
-    css_path = os.path.join(
-        os.path.dirname(__file__), "..", "src", "static", "style.css"
-    )
-    with open(css_path, encoding="utf-8") as fh:
-        css = fh.read()
-    assert ".term-grid-empty[hidden]" in css
-    assert "display: none" in css.split(".term-grid-empty[hidden]", 1)[1][:40]
-
-
-def test_terminal_css_has_swatch_and_rename_editor_styles():
-    """The rename editor and color swatches carry their own styling."""
-    css_path = os.path.join(
-        os.path.dirname(__file__), "..", "src", "static", "style.css"
-    )
-    with open(css_path, encoding="utf-8") as fh:
-        css = fh.read()
-    assert ".term-rename-pop" in css
-    assert ".term-swatch" in css
-    assert ".term-swatch.is-selected" in css
-
-
-def test_terminal_page_has_new_session_and_collapsible_rail(tmp_path, monkeypatch):
-    """New-session spawn is back, and the agents rail is collapsible."""
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path, *a, **kw):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    # new-session control + it POSTs to the create endpoint
-    assert 'id="term-new"' in body
-    assert "/api/terminal/session" in body
-    # collapsible rail: collapse + expand affordances and the data-rail state
-    assert 'id="term-rail-collapse"' in body and 'id="term-rail-expand"' in body
-    assert 'data-rail=' in body
+# --- /api/terminal/tts (untouched by the terminal rewrite) ------------------
 
 
 def test_api_terminal_tts_proxies_to_voice_server(tmp_path, monkeypatch):
@@ -346,174 +220,96 @@ def test_api_terminal_tts_requires_text(tmp_path, monkeypatch):
     assert response.status_code == 400
 
 
-def test_terminal_page_has_speaker_toggle(tmp_path, monkeypatch):
+# --- /terminal page (rewritten: xterm.js canvas, not chat panels) -----------
+
+
+def test_terminal_page_renders_xterm_shell(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
+    response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="term-xterm"' in body
+    assert 'id="term-session-select"' in body
+    assert "vendor/xterm/xterm.js" in body
+    assert "vendor/xterm/addon-fit.js" in body
+    assert "/api/terminal/attach/" in body
+    assert "/api/terminal/sessions" in body
+
+
+def test_terminal_page_redirects_when_unauthenticated(tmp_path, monkeypatch):
+    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
+    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
+    client = TestClient(main_mod.app)
+
+    response = client.get("/terminal", follow_redirects=False)
+
+    assert response.status_code in (302, 303)
+
+
+def test_terminal_css_hides_intro_banner_not_nav():
+    """The terminal page hides the personal intro banner but keeps the nav bar."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+    assert "body:has(.terminal-page) .content-wrapper > .terminal-box" in css
+    assert "body:has(.terminal-page) nav { display: none" not in css
+    assert "body:has(.terminal-page) nav{display:none" not in css
+
+
+# --- GET /api/terminal/sessions ---------------------------------------------
+
+
+def test_api_terminal_sessions_returns_flat_labeled_list(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    now = int(__import__("time").time())
 
     async def fake_gateway_json(path, *a, **kw):
         if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-    assert response.status_code == 200
-    body = response.text
-    assert "term-panel-speaker" in body
-    assert "/api/terminal/tts" in body
-
-
-def test_terminal_input_is_growable_textarea(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    assert '<textarea' in body and 'class="term-input"' in body
-    assert "autoGrow" in body or "auto-grow" in body or "scrollHeight" in body
-
-
-def test_terminal_page_renders_mic_button(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        if path == "/sessions":
-            return []
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    assert "term-mic-btn" in response.text
-    assert "SpeechRecognition" in response.text
-
-
-def test_terminal_page_includes_skippy(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [
-                {"id": "ada-id", "name": "ada"},
-                {"id": "skippy-id", "name": "skippy"},
-            ]
+            return [{"id": "ada-id", "name": "ada"}, {"id": "skippy-id", "name": "skippy"}]
         if path == "/sessions":
             return [
-                {"id": "skippy-sess-1", "mind_id": "skippy-id", "status": "running",
-                 "last_active": now - 10, "summary": "hi skippy"},
+                {"id": "sess-old12345", "mind_id": "ada-id", "status": "idle",
+                 "last_active": now - 120, "summary": "older"},
+                {"id": "sess-new12345", "mind_id": "skippy-id", "status": "running",
+                 "last_active": now - 5, "summary": "newest"},
+                {"id": "sess-sched", "mind_id": "ada-id", "status": "running",
+                 "owner_type": "scheduler", "last_active": now - 1, "summary": "cron"},
             ]
         return []
 
     with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
+        response = client.get("/api/terminal/sessions")
 
     assert response.status_code == 200
-    body = response.text
-    assert "skippy" in body
-    assert 'value="session:skippy-sess-1"' in body
+    rows = response.json()
+    ids = [r["id"] for r in rows]
+    assert "sess-sched" not in ids  # scheduler sessions excluded
+    assert ids == ["sess-new12345", "sess-old12345"]  # most-recent first
+    newest = rows[0]
+    assert newest["mind_name"] == "skippy"
+    assert newest["short_id"] == "sess-new"
+    assert newest["status"] == "running"
+    assert newest["age"].endswith("ago")
+    assert newest["summary"] == "newest"
 
 
-def test_api_terminal_active_returns_running_session_for_mind(tmp_path, monkeypatch):
+def test_api_terminal_sessions_empty_on_gateway_error(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
 
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/sessions":
-            return [
-                {"id": "old-1", "mind_id": "ada-id", "status": "closed", "last_active": now - 10},
-                {"id": "live-1", "mind_id": "ada-id", "status": "running", "last_active": now - 5},
-            ]
-        return []
+    async def fake_gateway_json(path, *a, **kw):
+        raise RuntimeError("gateway unreachable")
 
     with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/api/terminal/active?mind_id=ada-id")
+        response = client.get("/api/terminal/sessions")
 
     assert response.status_code == 200
-    assert response.json()["id"] == "live-1"
+    assert response.json() == []
 
 
-def test_api_terminal_active_excludes_dying_session(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/sessions":
-            return [
-                {"id": "dying", "mind_id": "ada-id", "status": "running", "last_active": now - 1},
-                {"id": "successor", "mind_id": "ada-id", "status": "running", "last_active": now - 3},
-            ]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/api/terminal/active?mind_id=ada-id&exclude=dying")
-
-    assert response.status_code == 200
-    assert response.json()["id"] == "successor"
-
-
-def test_api_terminal_active_returns_204_when_no_live_session(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/sessions":
-            return []
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/api/terminal/active?mind_id=ada-id")
-
-    assert response.status_code == 204
-
-
-def test_terminal_page_contains_rotation_reattach_logic(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    assert "/api/terminal/active" in body
-    assert "reattach" in body.lower() or "reconnect" in body.lower()
-
-
-def test_api_terminal_selector_returns_grouped_payload(tmp_path, monkeypatch):
-    client = _authed_client(tmp_path, monkeypatch)
-    now = int(__import__("time").time())
-
-    async def fake_gateway_json(path: str, *args, **kwargs):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        if path == "/sessions":
-            return [
-                {"id": "sess-xyz", "mind_id": "ada-id", "status": "idle",
-                 "last_active": now - 120, "summary": "x"},
-            ]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/api/terminal/selector")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["name"] == "ada"
-    assert payload[0]["sessions"][0]["id"] == "sess-xyz"
+# --- POST/DELETE /api/terminal/sessions -------------------------------------
 
 
 class _FakeUrlopen:
@@ -536,102 +332,140 @@ class _FakeUrlopen:
         return json.dumps({"id": "new-session"}).encode("utf-8")
 
 
-def test_terminal_session_create_uses_unique_client_ref_per_tile(tmp_path, monkeypatch):
-    """Each tile must get its own active_sessions binding.
+def test_terminal_session_create_uses_unique_client_ref_per_call(tmp_path, monkeypatch):
+    """Each POST must get its own active_sessions binding.
 
-    A shared constant client_ref makes every tile collide on the gateway's
+    A shared constant client_ref makes calls collide on the gateway's
     (client_type, client_ref) primary key, so rotation arms the wrong session
-    and carry-forward memory lands in the wrong tile.
+    and carry-forward memory lands in the wrong place.
     """
     client = _authed_client(tmp_path, monkeypatch)
     captured = []
 
     with patch("main.urllib.request.urlopen", _FakeUrlopen(captured)):
-        first = client.post("/api/terminal/session", json={"mind_id": "skippy-id"})
-        second = client.post("/api/terminal/session", json={"mind_id": "skippy-id"})
+        first = client.post("/api/terminal/sessions", json={"mind_id": "skippy-id"})
+        second = client.post("/api/terminal/sessions", json={"mind_id": "skippy-id"})
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert len(captured) == 2
 
     refs = [body["client_ref"] for body in captured]
-    assert refs[0] != refs[1], "two tiles shared one client_ref"
+    assert refs[0] != refs[1], "two calls shared one client_ref"
     assert all(ref.startswith("terminal-") for ref in refs)
-    # owner_ref stays the stable surface label; only client_ref is per-tile.
     assert all(body["owner_ref"] == "terminal" for body in captured)
 
 
-def test_console_stream_sets_anti_buffering_headers(tmp_path, monkeypatch):
-    """SSE must carry no-cache/no-transform + X-Accel-Buffering headers so
-    intermediaries (Cloudflare) neither buffer nor transform the stream —
-    buffered SSE arrives in delayed bursts and loses events on idle cuts."""
+def test_terminal_session_create_requires_mind_id(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
+    response = client.post("/api/terminal/sessions", json={})
+    assert response.status_code == 400
 
-    async def fake_proxy(session_id):
-        yield "data: {\"type\":\"ping\"}\n\n"
 
-    with patch("main._proxy_session_events", side_effect=fake_proxy):
-        response = client.get("/api/console/sess-1/stream")
+def test_terminal_session_delete_proxies_to_gateway(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    captured = {}
+
+    class _FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return json.dumps({"session_id": "sess-1", "status": "closed"}).encode()
+
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        return _FakeResp()
+
+    with patch("main.urllib.request.urlopen", side_effect=_fake_urlopen):
+        response = client.delete("/api/terminal/sessions/sess-1")
 
     assert response.status_code == 200
-    assert "no-cache" in response.headers["cache-control"]
-    assert "no-transform" in response.headers["cache-control"]
-    assert response.headers["x-accel-buffering"] == "no"
+    assert response.json()["status"] == "closed"
+    assert captured["method"] == "DELETE"
+    assert "/sessions/sess-1" in captured["url"]
 
 
-def test_proxy_session_events_passes_ping_through():
-    """Gateway heartbeat pings must reach the browser to keep the SSE
-    connection warm through proxy idle timeouts."""
-    lines = [
-        'data: {"type":"ping","session_id":"sess-1"}',
-        "",
-        'data: {"type":"assistant","content":"hi"}',
-        "",
-    ]
-    stream_cm = _FakeStreamResponse(lines)
-    fake_client = _FakeAsyncClient(stream_cm)
-    with patch("main.httpx.AsyncClient", return_value=fake_client):
-        events = asyncio.run(_collect(main_mod._proxy_session_events("sess-1")))
-
-    assert events[0] == 'data: {"type":"ping","session_id":"sess-1"}\n\n'
+# --- WS /api/terminal/attach/{session_id} -----------------------------------
 
 
-def test_terminal_page_resyncs_history_after_stream_gap(tmp_path, monkeypatch):
-    """Events published while the SSE stream is down are never replayed by
-    the gateway, so the page must repaint from the turn ledger on every
-    reconnect and on returning to a backgrounded tab."""
+class _FakeMindWS:
+    """Stands in for a websockets.ClientConnection."""
+
+    def __init__(self, incoming=None):
+        self._incoming = list(incoming or [])
+        self._block = asyncio.Event()
+        self.sent = []
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._incoming:
+            return self._incoming.pop(0)
+        await self._block.wait()  # never set — blocks until the pump is cancelled
+        raise StopAsyncIteration
+
+    async def send(self, data):
+        self.sent.append(data)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def test_attach_ws_rejects_unauthenticated(tmp_path, monkeypatch):
+    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
+    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
+    client = TestClient(main_mod.app)
+
+    with pytest.raises(Exception):
+        with client.websocket_connect("/api/terminal/attach/sess-1") as ws:
+            ws.receive_bytes()
+
+
+def test_attach_ws_relays_mind_output_to_browser(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[b"hello from the tui\r\n"])
+
+    def _fake_connect(url, **kwargs):
+        _fake_connect.requested_url = url
+        _fake_connect.requested_headers = kwargs.get("additional_headers")
+        return fake_ws
+
+    with patch("main.websockets.connect", _fake_connect):
+        with client.websocket_connect("/api/terminal/attach/sess-1") as ws:
+            assert ws.receive_bytes() == b"hello from the tui\r\n"
+
+    assert "/sessions/sess-1/attach" in _fake_connect.requested_url
+
+
+def test_attach_ws_relays_browser_input_to_mind(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[])
+
+    def _fake_connect(url, **kwargs):
+        return fake_ws
+
+    with patch("main.websockets.connect", _fake_connect):
+        with client.websocket_connect("/api/terminal/attach/sess-2") as ws:
+            ws.send_bytes(b"/help\n")
+            import time
+            for _ in range(20):
+                if fake_ws.sent:
+                    break
+                time.sleep(0.05)
+            assert fake_ws.sent == [b"/help\n"]
+
+
+def test_attach_ws_closes_1011_when_gateway_unreachable(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 
-    async def fake_gateway_json(path, *a, **kw):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
+    def _fake_connect(url, **kwargs):
+        raise OSError("connection refused")
 
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    assert "resyncFromHistory" in body
-    assert "needsResync" in body
-    assert "visibilitychange" in body
-
-
-def test_terminal_page_walks_to_successor_on_deleted_session(tmp_path, monkeypatch):
-    """A 404 from the gateway events endpoint means the session row is gone
-    (deleted outright, not just rotated) — the page must run the same
-    successor walk as session_closed instead of reconnecting forever."""
-    client = _authed_client(tmp_path, monkeypatch)
-
-    async def fake_gateway_json(path, *a, **kw):
-        if path == "/broker/minds":
-            return [{"id": "ada-id", "name": "ada"}]
-        return []
-
-    with patch("main._gateway_json", side_effect=fake_gateway_json):
-        response = client.get("/terminal")
-
-    assert response.status_code == 200
-    body = response.text
-    assert "handleSessionGone" in body
-    assert "upstream_error: 404" in body
+    with patch("main.websockets.connect", _fake_connect):
+        with pytest.raises(Exception):
+            with client.websocket_connect("/api/terminal/attach/sess-3") as ws:
+                ws.receive_bytes()

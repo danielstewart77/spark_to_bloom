@@ -6,6 +6,7 @@ markdown
 jinja2
 aiofiles
 httpx
+websockets
 python-multipart
 bcrypt
 itsdangerous

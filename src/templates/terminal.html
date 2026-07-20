@@ -1,1122 +1,201 @@
 {% extends "layout.html" %}
 {% block content %}
+<link rel="stylesheet" href="{{ request.url_for('static', path='vendor/xterm/xterm.css') }}">
 <main class="terminal-page">
-    <!-- Server-rendered data seed + no-JS fallback. Hidden; the UI below is
-         built from this (and refreshed from /api/terminal/selector). -->
-    <select id="mind-select" class="term-ssr-seed" hidden aria-hidden="true" tabindex="-1">
-        {% for mind in selector_minds %}
-        <optgroup label="{{ mind.name }} · {{ mind.id[:8] }}">
-            <option value="new:{{ mind.id }}"
-                    data-action="new"
-                    data-mind-id="{{ mind.id }}"
-                    data-mind-name="{{ mind.name }}">— new session for {{ mind.name }} —</option>
-            {% for session in mind.sessions %}
-            <option value="session:{{ session.id }}"
-                    data-action="load"
-                    data-session-id="{{ session.id }}"
-                    data-mind-id="{{ mind.id }}"
-                    data-mind-name="{{ mind.name }}"
-                    data-status="{{ session.status }}"
-                    data-short-id="{{ session.short_id }}"
-                    data-age="{{ session.age }}"
-                    data-last-active="{{ session.last_active }}"
-                    data-summary="{{ session.summary }}">{{ mind.name }} · {{ session.short_id }} · {{ session.status }} · {{ session.age }}{% if session.summary %} · {{ session.summary[:48] }}{% endif %}</option>
-            {% endfor %}
-        </optgroup>
-        {% endfor %}
-    </select>
-
-    <div class="term-app" id="term-app" data-view="list" data-rail="expanded">
-        <!-- ── Sessions list (the "agents" rail) ────────────────────── -->
-        <section class="term-list-view" id="term-list-view">
-            <header class="term-list-head">
-                <button id="term-rail-collapse" class="term-icon-btn term-rail-btn" type="button"
-                        title="collapse agents sidebar" aria-label="collapse agents sidebar">«</button>
-                <h1 class="term-list-title">Agents</h1>
-                <div class="term-seg" role="tablist" aria-label="session filter">
-                    <button id="term-tab-active" class="term-seg-btn is-active" type="button"
-                            role="tab" aria-selected="true" data-filter="active">Active</button>
-                    <button id="term-tab-archived" class="term-seg-btn" type="button"
-                            role="tab" aria-selected="false" data-filter="archived">Archived</button>
-                </div>
-                <button id="term-new" class="term-action-btn" type="button" title="start a new session">+ new</button>
-                <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
-            </header>
-            <div id="term-new-menu" class="term-new-menu" hidden aria-label="pick a mind"></div>
-            <div id="term-list" class="term-list" aria-live="polite"></div>
-            <p id="term-list-empty" class="term-list-empty" hidden>No sessions.</p>
-        </section>
-
-        <!-- ── Stage: the Brady-Bunch grid of open sessions ─────────── -->
-        <section class="term-stage" id="term-stage">
-            <button id="term-rail-expand" class="term-rail-expand" type="button" hidden
-                    title="show agents sidebar" aria-label="show agents sidebar">agents »</button>
-            <div id="term-grid" class="term-grid" data-count="0"></div>
-            <p id="term-grid-empty" class="term-grid-empty">Select a session from the list to open it here.</p>
-        </section>
+    <header class="term-bar">
+        <select id="term-session-select" class="term-session-select" aria-label="session"></select>
+        <button id="term-new" class="term-action-btn" type="button" title="start a new session">+ new</button>
+        <button id="term-refresh" class="term-action-btn" type="button" title="refresh session list">↻</button>
+        <button id="term-kill" class="term-action-btn term-action-btn-danger" type="button"
+                title="end this session's process (keeps the conversation branch)">end</button>
+        <span id="term-status" class="term-status">loading…</span>
+    </header>
+    <div id="term-new-menu" class="term-new-menu" hidden aria-label="pick a mind"></div>
+    <div id="term-xterm" class="term-xterm"></div>
+    <div class="term-mobile-toolbar" id="term-mobile-toolbar" aria-label="terminal keys">
+        <button type="button" data-seq="&#x1b;">Esc</button>
+        <button type="button" data-seq="&#x09;">Tab</button>
+        <button type="button" data-seq="&#x03;">Ctrl+C</button>
+        <button type="button" data-seq="&#x1b;[A">&uarr;</button>
+        <button type="button" data-seq="&#x1b;[B">&darr;</button>
     </div>
 </main>
 
+<script src="{{ request.url_for('static', path='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ request.url_for('static', path='vendor/xterm/addon-fit.js') }}"></script>
 <script>
 (function () {
-    const termApp = document.getElementById("term-app");
-    const mindSelect = document.getElementById("mind-select");
-    const listEl = document.getElementById("term-list");
-    const listEmpty = document.getElementById("term-list-empty");
-    const gridEl = document.getElementById("term-grid");
-    const gridEmpty = document.getElementById("term-grid-empty");
-    const refreshBtn = document.getElementById("term-refresh");
+    "use strict";
+
+    // A true interactive terminal: raw bytes over a WebSocket into a pty
+    // running `claude --resume` inside the owning mind. Not the chat/SSE
+    // pattern — see src/backlog/web-terminal-interface.md.
+    const sel = document.getElementById("term-session-select");
+    const statusEl = document.getElementById("term-status");
+    const xtermEl = document.getElementById("term-xterm");
     const newBtn = document.getElementById("term-new");
     const newMenu = document.getElementById("term-new-menu");
-    const tabActive = document.getElementById("term-tab-active");
-    const tabArchived = document.getElementById("term-tab-archived");
-    const railCollapseBtn = document.getElementById("term-rail-collapse");
-    const railExpandBtn = document.getElementById("term-rail-expand");
+    const refreshBtn = document.getElementById("term-refresh");
+    const killBtn = document.getElementById("term-kill");
+    const toolbar = document.getElementById("term-mobile-toolbar");
 
-    const ACTIVE_STATUSES = new Set(["running", "idle"]);
-    const ASSISTANT_IDLE_MS = 1500;
-    const isWide = () => window.matchMedia("(min-width: 860px)").matches;
+    const term = new window.Terminal({
+        convertEol: true,
+        cursorBlink: true,
+        fontSize: 14,
+        scrollback: 5000,
+        theme: { background: "#080f18", foreground: "#dce8f0", cursor: "#c9a84c" },
+    });
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(xtermEl);
+    fitAddon.fit();
+    window.addEventListener("resize", () => fitAddon.fit());
 
-    let currentFilter = "active";
-    let lastMinds = [];
+    let ws = null;
+    let currentSessionId = null;
 
-    // sessionId -> panel. The panels currently mounted in the grid.
-    const openPanels = new Map();
-    let focusedPanel = null;
-
-    // ── shared content helpers ────────────────────────────────────
-    function flattenContent(v) {
-        if (v == null) return "";
-        if (typeof v === "string") return v;
-        if (Array.isArray(v)) return v.map(flattenContent).join("");
-        if (typeof v === "object") {
-            if (typeof v.text === "string") return v.text;
-            if (v.content != null) return flattenContent(v.content);
-            return "";
-        }
-        return String(v);
-    }
-    function extractText(event) {
-        const v = event.content || event.delta || event.text ||
-            (event.message && (event.message.content || event.message.text)) || "";
-        return flattenContent(v);
+    function setStatus(text) {
+        statusEl.textContent = text;
     }
 
-    // ── shared mic controller (one recognition, aimed at the panel that started it) ──
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const micSupported = !!SpeechRecognitionCtor;
-    let recognition = null;
-    let micTarget = null;      // the panel currently dictating
-    let micFinalText = "";
-
-    function stopMic() {
-        if (!recognition) return;
-        const t = micTarget;
-        micTarget = null;
-        try { recognition.stop(); } catch (e) {}
-        if (t) t.setMicLabel("off");
+    function wsUrl(sessionId) {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        return proto + "//" + location.host + "/api/terminal/attach/" + encodeURIComponent(sessionId);
     }
-    function startMic(panel) {
-        if (!micSupported) return;
-        if (micTarget && micTarget !== panel) stopMic();
-        if (!recognition) {
-            recognition = new SpeechRecognitionCtor();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = (navigator.language || "en-US");
-            recognition.onresult = function (event) {
-                if (!micTarget) return;
-                let finalText = "";
-                let interim = "";
-                for (let i = 0; i < event.results.length; i++) {
-                    const res = event.results[i];
-                    const transcript = res[0] && res[0].transcript ? res[0].transcript : "";
-                    if (res.isFinal) finalText += (finalText ? " " : "") + transcript.trim();
-                    else interim += transcript;
-                }
-                const preserved = micFinalText ? micFinalText + " " : "";
-                micTarget.setInputValue((preserved + finalText + " " + interim).replace(/\s+/g, " ").trim());
-            };
-            recognition.onerror = function () {
-                if (micTarget) micTarget.setMicLabel("error");
-                micTarget = null;
-            };
-            recognition.onend = function () {
-                if (micTarget) {
-                    micFinalText = micTarget.getInputValue().trim();
-                    try { recognition.start(); } catch (e) { const t = micTarget; micTarget = null; if (t) t.setMicLabel("off"); }
-                }
-            };
-        }
-        micTarget = panel;
-        micFinalText = panel.getInputValue().trim();
-        try {
-            recognition.start();
-            panel.setMicLabel("on");
-            panel.focus();
-        } catch (e) {
-            panel.setMicLabel("error");
+
+    function closeSocket() {
+        if (ws) {
+            const dead = ws;
+            ws = null;
+            dead.onclose = null;
+            try { dead.close(); } catch (err) { /* already closing */ }
         }
     }
 
-    // ── open-set persistence (restore the grid across reloads) ─────
-    function saveOpenSet() {
-        try { localStorage.setItem("term-open", JSON.stringify(Array.from(openPanels.keys()))); } catch (e) {}
-    }
-    function recalledOpenSet() {
-        try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
+    function sendBytes(text) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(new TextEncoder().encode(text));
+        }
     }
 
-    // ── per-session labels (custom name + color), local to this browser ──
-    const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
-    function loadLabels() {
-        try { return JSON.parse(localStorage.getItem("term-labels") || "{}") || {}; } catch (e) { return {}; }
-    }
-    function saveLabels(map) {
-        try { localStorage.setItem("term-labels", JSON.stringify(map)); } catch (e) {}
-    }
-    function getLabel(id) {
-        if (!id) return {};
-        const l = loadLabels()[id];
-        return (l && typeof l === "object") ? l : {};
-    }
-    function setLabel(id, patch) {
-        if (!id) return;
-        const map = loadLabels();
-        const cur = (map[id] && typeof map[id] === "object") ? map[id] : {};
-        const next = Object.assign({}, cur, patch);
-        if (!next.name && !next.color) delete map[id]; else map[id] = next;
-        saveLabels(map);
-    }
-    function migrateLabel(oldId, newId) {
-        if (!oldId || !newId || oldId === newId) return;
-        const map = loadLabels();
-        if (map[oldId]) { map[newId] = map[oldId]; delete map[oldId]; saveLabels(map); }
-    }
-
-    // ── one live session, rendered as a grid tile ─────────────────
-    function createPanel(session) {
-        let sessionId = session.id;
-        let mindId = session.mind_id || null;
-        let mindName = session.mind_name || null;
-
-        const el = document.createElement("section");
-        el.className = "term-panel";
-        el.dataset.sessionId = sessionId;
-        el.innerHTML =
-            '<header class="term-panel-head">' +
-                '<button class="term-panel-back term-icon-btn" type="button" title="back to sessions" aria-label="back to sessions">‹</button>' +
-                '<span class="term-panel-dot" hidden aria-hidden="true"></span>' +
-                '<span class="term-panel-info">…</span>' +
-                '<button class="term-panel-rename term-action-btn" type="button" title="rename / recolor this session" aria-label="rename this session">✎</button>' +
-                '<button class="term-panel-speaker term-action-btn" type="button" title="toggle voice playback" aria-pressed="false">speaker off</button>' +
-                '<button class="term-panel-delete term-action-btn term-action-btn-danger" type="button" title="delete this session" hidden>delete</button>' +
-                '<button class="term-panel-close term-action-btn" type="button" title="remove from grid" aria-label="remove from grid">✕</button>' +
-            '</header>' +
-            '<div class="term-rename-pop" hidden>' +
-                '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
-                '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
-                '<div class="term-rename-actions">' +
-                    '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
-                    '<button type="button" class="term-action-btn term-rename-save">save</button>' +
-                '</div>' +
-            '</div>' +
-            '<div class="term-feed" aria-live="polite"></div>' +
-            '<form class="term-input-bar" autocomplete="off">' +
-                '<span class="term-prompt">&gt;</span>' +
-                '<textarea class="term-input" rows="1" placeholder="type a message…" aria-label="message"></textarea>' +
-                '<button class="term-mic-btn term-send-btn" type="button" title="hold or toggle to dictate" hidden>mic</button>' +
-                '<button type="submit" class="term-send-btn">send</button>' +
-            '</form>';
-
-        const feed = el.querySelector(".term-feed");
-        const form = el.querySelector(".term-input-bar");
-        const input = el.querySelector(".term-input");
-        const info = el.querySelector(".term-panel-info");
-        const speakerBtn = el.querySelector(".term-panel-speaker");
-        const deleteBtn = el.querySelector(".term-panel-delete");
-        const closeBtn = el.querySelector(".term-panel-close");
-        const backBtn = el.querySelector(".term-panel-back");
-        const micBtn = el.querySelector(".term-mic-btn");
-        const renameBtn = el.querySelector(".term-panel-rename");
-        const renamePop = el.querySelector(".term-rename-pop");
-        const renameInput = el.querySelector(".term-rename-input");
-        const renameSwatches = el.querySelector(".term-rename-swatches");
-        const renameSave = el.querySelector(".term-rename-save");
-        const renameClear = el.querySelector(".term-rename-clear");
-        const headDot = el.querySelector(".term-panel-dot");
-
-        let eventSource = null;
-        let currentAssistantEl = null;
-        let reattachTimer = null;
-        let reattachStartedAt = 0;
-        let sessionWasClosed = false;
-        let inFlight = false;
-        const pendingQueue = []; // FIFO of {text, el, pill, sent} — queued while a turn is in flight
-        let assistantDoneTimer = null;
-        let destroyed = false;
-        let needsResync = false;   // stream dropped — repaint from history on reconnect
-        let resyncedMidTurn = false; // repainted while a turn was streaming — resync again at result
-        let resyncing = false;
-
-        function queueFront() { return pendingQueue[0] || null; }
-
-        // per-panel TTS
-        const audioEl = new Audio();
-        audioEl.preload = "auto";
-        let speakerOn = false;
-        let ttsBuffer = "";
-        let ttsFlushTimer = null;
-        let ttsPlaying = false;
-        const ttsQueue = [];
-
-        function setInfo() {
-            const label = getLabel(sessionId);
-            const base = mindName || (mindId || "").slice(0, 8);
-            const nm = (label.name || "").trim();
-            info.textContent = (nm || base) + " · " + (session.status || "running");
-            info.title = nm ? nm + " · " + base : base;
-        }
-
-        // ── custom name + color ───────────────────────────────────
-        let editSelectedColor = "";
-        function applyLabel() {
-            const label = getLabel(sessionId);
-            setInfo();
-            const color = label.color || "";
-            if (color) {
-                el.style.borderColor = color;
-                el.style.borderLeft = "3px solid " + color;
-                headDot.style.background = color;
-                headDot.hidden = false;
-            } else {
-                el.style.borderColor = "";
-                el.style.borderLeft = "";
-                headDot.hidden = true;
-            }
-            renderCards(lastMinds);
-        }
-        function buildSwatches() {
-            renameSwatches.innerHTML = "";
-            LABEL_COLORS.forEach(function (c) {
-                const sw = document.createElement("button");
-                sw.type = "button";
-                sw.className = "term-swatch";
-                sw.style.background = c;
-                sw.dataset.color = c;
-                sw.setAttribute("aria-label", "color " + c);
-                sw.addEventListener("click", function () {
-                    editSelectedColor = (editSelectedColor === c) ? "" : c;
-                    markSwatches();
-                });
-                renameSwatches.appendChild(sw);
-            });
-        }
-        function markSwatches() {
-            Array.from(renameSwatches.children).forEach(function (sw) {
-                sw.classList.toggle("is-selected", sw.dataset.color === editSelectedColor);
-            });
-        }
-        function openRename() {
-            const label = getLabel(sessionId);
-            renameInput.value = label.name || "";
-            editSelectedColor = label.color || "";
-            markSwatches();
-            renamePop.hidden = false;
-            renameInput.focus();
-            renameInput.select();
-        }
-        function closeRename() { renamePop.hidden = true; }
-        function commitRename() {
-            setLabel(sessionId, {name: renameInput.value.trim(), color: editSelectedColor});
-            closeRename();
-            applyLabel();
-        }
-        buildSwatches();
-        renameBtn.addEventListener("click", function () {
-            if (renamePop.hidden) openRename(); else closeRename();
-        });
-        renameSave.addEventListener("click", commitRename);
-        renameClear.addEventListener("click", function () {
-            setLabel(sessionId, {name: "", color: ""});
-            closeRename();
-            applyLabel();
-        });
-        renameInput.addEventListener("keydown", function (e) {
-            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-            else if (e.key === "Escape") { e.preventDefault(); closeRename(); }
-        });
-
-        function appendLine(cls, text) {
-            currentAssistantEl = null;
-            const line = document.createElement("div");
-            line.className = "term-line " + cls;
-            line.textContent = text;
-            feed.appendChild(line);
-            feed.scrollTop = feed.scrollHeight;
-            return line;
-        }
-        function startAssistantLine() {
-            currentAssistantEl = document.createElement("div");
-            currentAssistantEl.className = "term-line term-assistant";
-            currentAssistantEl.dataset.prefix = (mindName || "mind") + " > ";
-            currentAssistantEl.textContent = currentAssistantEl.dataset.prefix;
-            feed.appendChild(currentAssistantEl);
-            feed.scrollTop = feed.scrollHeight;
-        }
-        function appendAssistantChunk(text) {
-            if (!currentAssistantEl) return;
-            currentAssistantEl.textContent += text;
-            feed.scrollTop = feed.scrollHeight;
-        }
-
-        function scheduleAssistantDone() {
-            if (assistantDoneTimer) clearTimeout(assistantDoneTimer);
-            assistantDoneTimer = setTimeout(function () {
-                assistantDoneTimer = null;
-                inFlight = false;
-                currentAssistantEl = null;
-                trySendFront();
-            }, ASSISTANT_IDLE_MS);
-        }
-        function cancelAssistantDone() {
-            if (assistantDoneTimer) { clearTimeout(assistantDoneTimer); assistantDoneTimer = null; }
-        }
-
-        // Sends the oldest queued message once nothing is in flight. Marks it
-        // `sent` so a later idle tick or event doesn't re-POST it while we're
-        // still waiting on the echo/response — the item stays in the queue
-        // (still visibly pending) until the "user" echo event confirms it.
-        async function trySendFront() {
-            if (inFlight || !sessionId) return;
-            const item = queueFront();
-            if (!item || item.sent) return;
-            item.sent = true;
-            try {
-                await fetch("/api/console/" + sessionId + "/message", {
-                    method: "POST", credentials: "same-origin",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({text: item.text}),
-                });
-            } catch (err) {
-                appendLine("term-system", "send error: " + err.message);
-                pendingQueue.shift();
-                if (item.el && item.el.parentNode) item.el.remove();
-                trySendFront();
-            }
-        }
-
-        // ── TTS ───────────────────────────────────────────────────
-        function loadSpeakerPref() {
-            try { return localStorage.getItem("term-speaker:" + (mindName || "default")) === "on"; }
-            catch (e) { return false; }
-        }
-        function saveSpeakerPref(on) {
-            try { localStorage.setItem("term-speaker:" + (mindName || "default"), on ? "on" : "off"); } catch (e) {}
-        }
-        function setSpeakerLabel() {
-            speakerBtn.textContent = speakerOn ? "speaker on" : "speaker off";
-            speakerBtn.setAttribute("aria-pressed", speakerOn ? "true" : "false");
-            speakerBtn.classList.toggle("term-speaker-on", speakerOn);
-        }
-        function ttsAccumulate(chunk) { if (speakerOn) ttsBuffer += chunk; }
-        function scheduleTtsFlush() {
-            if (!speakerOn) return;
-            if (ttsFlushTimer) clearTimeout(ttsFlushTimer);
-            ttsFlushTimer = setTimeout(flushTtsNow, 1500);
-        }
-        async function flushTtsNow() {
-            if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
-            const text = ttsBuffer.trim();
-            ttsBuffer = "";
-            if (!speakerOn || !text) return;
-            try {
-                const resp = await fetch("/api/terminal/tts", {
-                    method: "POST", credentials: "same-origin",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({text: text, voice_id: mindName || "default"}),
-                });
-                if (!resp.ok) return;
-                const blob = await resp.blob();
-                ttsQueue.push(URL.createObjectURL(blob));
-                playNextTtsClip();
-            } catch (err) {}
-        }
-        function playNextTtsClip() {
-            if (ttsPlaying) return;
-            const url = ttsQueue.shift();
-            if (!url) return;
-            ttsPlaying = true;
-            audioEl.src = url;
-            audioEl.play().catch(function () { ttsPlaying = false; URL.revokeObjectURL(url); });
-            audioEl.onended = function () {
-                URL.revokeObjectURL(url);
-                ttsPlaying = false;
-                playNextTtsClip();
-            };
-        }
-        speakerOn = loadSpeakerPref();
-        setSpeakerLabel();
-        speakerBtn.addEventListener("click", function () {
-            speakerOn = !speakerOn;
-            saveSpeakerPref(speakerOn);
-            setSpeakerLabel();
-            if (!speakerOn) {
-                ttsBuffer = "";
-                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
-                ttsQueue.length = 0;
-                try { audioEl.pause(); audioEl.src = ""; } catch (e) {}
-                ttsPlaying = false;
-            }
-        });
-
-        // ── streaming ─────────────────────────────────────────────
-        function handleEvent(event) {
-            if (event.type === "assistant") {
-                inFlight = true;
-                const front = queueFront();
-                if (front && front.sent && !front.pill) {
-                    front.pill = makeInterruptPill();
-                    front.el.appendChild(front.pill);
-                }
-                const chunk = extractText(event);
-                if (!chunk) return;
-                if (!currentAssistantEl) startAssistantLine();
-                appendAssistantChunk(chunk);
-                ttsAccumulate(chunk);
-                scheduleTtsFlush();
-                scheduleAssistantDone();
-            } else if (event.type === "user") {
-                const text = extractText(event);
-                const front = queueFront();
-                if (front && front.sent && text === front.text) {
-                    front.el.classList.remove("term-pending");
-                    if (front.pill) front.pill.remove();
-                    pendingQueue.shift();
-                    trySendFront();
-                } else if (text) {
-                    appendLine("term-user", "> " + text);
-                }
-                flushTtsNow();
-            } else if (event.type === "result") {
-                cancelAssistantDone();
-                inFlight = false;
-                currentAssistantEl = null;
-                flushTtsNow();
-                if (resyncedMidTurn) {
-                    // The feed was rebuilt from history while this turn was
-                    // still streaming, so its earlier chunks are missing on
-                    // screen. Now that the turn is in the ledger, repaint.
-                    resyncedMidTurn = false;
-                    resyncFromHistory();
-                }
-                trySendFront();
-            } else if (event.type === "session_closed") {
-                handleSessionGone();
-            } else if (event.type === "system" && typeof event.content === "string" &&
-                       event.content.indexOf("upstream_error: 404") === 0) {
-                // Session row is gone on the gateway (deleted, not just
-                // rotated) — walk to a successor instead of reconnecting
-                // to a dead stream forever.
-                handleSessionGone();
-            }
-            // ping and tool events are intentionally ignored
-        }
-        function handleSessionGone() {
-            cancelAssistantDone();
-            currentAssistantEl = null;
-            inFlight = false;
-            // Keep the queue — the old session may never have received
-            // an unconfirmed front item, so mark it unsent and retry
-            // once reattached rather than dropping queued messages.
-            pendingQueue.forEach(function (item) { item.sent = false; });
-            sessionWasClosed = true;
-            disconnectStream();
-            beginReattachLoop();
-        }
-        function disconnectStream() {
-            if (eventSource) { eventSource.close(); eventSource = null; }
-        }
-        function connectStream(id) {
-            disconnectStream();
-            eventSource = new EventSource("/api/console/" + id + "/stream");
-            eventSource.onopen = function () {
-                // Events published while the stream was down are gone —
-                // the gateway keeps no observer history. Repaint from the
-                // durable turn ledger after every gap.
-                if (needsResync && sessionId === id && !destroyed && !sessionWasClosed) {
-                    needsResync = false;
-                    resyncFromHistory();
-                }
-            };
-            eventSource.onmessage = function (msg) {
-                try { handleEvent(JSON.parse(msg.data)); } catch (e) {}
-            };
-            eventSource.onerror = function () {
-                if (sessionWasClosed || destroyed) return;
-                needsResync = true;
-                setTimeout(function () {
-                    if (sessionId === id && !sessionWasClosed && !destroyed) connectStream(id);
-                }, 3000);
-            };
-        }
-        function onVisibilityChange() {
-            if (document.visibilityState !== "visible" || destroyed || sessionWasClosed || !sessionId) return;
-            // Mobile browsers suspend timers and sockets in background tabs;
-            // whatever streamed while suspended is lost. Catch up, and
-            // revive the stream if the browser silently killed it.
-            resyncFromHistory();
-            if (!eventSource || eventSource.readyState === 2) connectStream(sessionId);
-        }
-        document.addEventListener("visibilitychange", onVisibilityChange);
-
-        function cancelReattachLoop() {
-            if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
-        }
-        function beginReattachLoop() {
-            cancelReattachLoop();
-            if (!mindId) { appendLine("term-system", "— session closed —"); return; }
-            reattachStartedAt = Date.now();
-            appendLine("term-system", "session rotated — reattaching to " + (mindName || "mind") + "…");
-            pollForSuccessor();
-        }
-        async function pollForSuccessor() {
-            if (!mindId || destroyed) return;
-            const deadId = sessionId || "";
-            try {
-                const resp = await fetch(
-                    "/api/terminal/active?mind_id=" + encodeURIComponent(mindId) +
-                    "&exclude=" + encodeURIComponent(deadId),
-                    {credentials: "same-origin"}
-                );
-                if (resp.status === 200) {
-                    const successor = await resp.json();
-                    if (successor && successor.id) { attachSuccessor(successor); return; }
-                }
-            } catch (err) {}
-            const elapsed = Date.now() - reattachStartedAt;
-            if (elapsed >= 30000) {
-                try {
-                    const created = await fetch("/api/terminal/session", {
-                        method: "POST", credentials: "same-origin",
-                        headers: {"Content-Type": "application/json"},
-                        body: JSON.stringify({mind_id: mindId}),
-                    });
-                    if (created.ok) { attachSuccessor(await created.json()); return; }
-                } catch (err) {}
-                appendLine("term-system", "reattach failed — remove this tile and pick the session again");
-                return;
-            }
-            reattachTimer = setTimeout(pollForSuccessor, 2000);
-        }
-        function attachSuccessor(succ) {
-            cancelReattachLoop();
-            sessionWasClosed = false;
-            appendLine("term-system", "reattached to " + (succ.id || "").slice(0, 8));
-            const oldId = sessionId;
-            sessionId = succ.id;
-            mindId = succ.mind_id || mindId;
-            session.status = succ.status || "running";
-            el.dataset.sessionId = sessionId;
-            migrateLabel(oldId, sessionId);
-            applyLabel();
-            reKey(oldId, sessionId);
-            connectStream(sessionId);
-            refreshSelector();
-            trySendFront();
-        }
-
-        // ── interrupt pill ────────────────────────────────────────
-        function makeInterruptPill() {
-            const pill = document.createElement("button");
-            pill.type = "button";
-            pill.className = "term-interrupt-pill";
-            pill.textContent = "interrupt";
-            pill.addEventListener("click", function () { doInterrupt(pill); });
-            return pill;
-        }
-        async function doInterrupt(pill) {
-            pill.disabled = true;
-            pill.textContent = "interrupting…";
-            const id = sessionId;
-            try {
-                await fetch("/api/console/" + id + "/interrupt", {method: "POST", credentials: "same-origin"});
-            } catch (e) {
-                pill.disabled = false; pill.textContent = "interrupt"; return;
-            }
-            inFlight = false;
-            const front = queueFront();
-            if (front) front.sent = false;
-            trySendFront();
-        }
-
-        // ── input ─────────────────────────────────────────────────
-        function autoGrowInput() {
-            input.style.height = "auto";
-            input.style.height = input.scrollHeight + "px";
-        }
-        input.addEventListener("input", autoGrowInput);
-        input.addEventListener("focus", function () { focusedPanel = panel; });
-        input.addEventListener("keydown", function (e) {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
-        });
-        setTimeout(autoGrowInput, 0);
-
-        form.addEventListener("submit", async function (e) {
-            e.preventDefault();
-            if (micTarget === panel) { stopMic(); micFinalText = ""; }
-            const text = input.value.trim();
-            if (!text || !sessionId) return;
-            input.value = "";
-            autoGrowInput();
-            currentAssistantEl = null;
-
-            const lineEl = document.createElement("div");
-            lineEl.className = "term-line term-user term-pending";
-            lineEl.textContent = "> " + text;
-            let pill = null;
-            if (inFlight && pendingQueue.length === 0) {
-                pill = makeInterruptPill();
-                lineEl.appendChild(pill);
-            }
-            feed.appendChild(lineEl);
-            feed.scrollTop = feed.scrollHeight;
-            pendingQueue.push({text: text, el: lineEl, pill: pill, sent: false});
-
-            trySendFront();
-        });
-
-        // ── mic ───────────────────────────────────────────────────
-        if (micSupported) {
-            micBtn.hidden = false;
-            micBtn.addEventListener("click", function () {
-                if (micTarget === panel) stopMic();
-                else startMic(panel);
-            });
-        }
-
-        // ── delete / close / back ─────────────────────────────────
-        deleteBtn.addEventListener("click", async function () {
-            if (!sessionId) return;
-            if (!confirm("Delete this session? This cannot be undone.")) return;
-            const id = sessionId;
-            deleteBtn.disabled = true;
-            deleteBtn.textContent = "deleting…";
-            try {
-                const resp = await fetch("/api/terminal/session/" + id, {method: "DELETE", credentials: "same-origin"});
-                if (!resp.ok) {
-                    let msg = "HTTP " + resp.status;
-                    try { const d = await resp.json(); msg = d.detail || d.error || msg; } catch (e) {}
-                    appendLine("term-system", "delete failed: " + msg);
-                    deleteBtn.disabled = false; deleteBtn.textContent = "delete";
-                } else {
-                    closePanel(panel);
-                    await refreshSelector();
-                }
-            } catch (err) {
-                appendLine("term-system", "delete error: " + err.message);
-                deleteBtn.disabled = false; deleteBtn.textContent = "delete";
-            }
-        });
-        closeBtn.addEventListener("click", function () { closePanel(panel); });
-        backBtn.addEventListener("click", function () { closePanel(panel); });
-
-        // ── history load + go live ────────────────────────────────
-        function paintHistoryRows(msgs) {
-            for (const m of msgs) {
-                const body = flattenContent(m.content);
-                if (!body) continue;
-                if (m.role === "user") {
-                    appendLine("term-user", "> " + body);
-                } else if (m.role === "assistant") {
-                    const line = document.createElement("div");
-                    line.className = "term-line term-assistant";
-                    line.dataset.prefix = (mindName || "mind") + " > ";
-                    line.textContent = line.dataset.prefix + body;
-                    feed.appendChild(line);
-                }
-            }
-            feed.scrollTop = feed.scrollHeight;
-        }
-        // Rebuild the feed from the durable turn ledger. Called after any
-        // stream gap: the gateway fans events out only to currently
-        // connected observers, so anything published during a gap never
-        // reaches this client any other way.
-        async function resyncFromHistory() {
-            if (resyncing || destroyed || !sessionId) return;
-            resyncing = true;
-            try {
-                const resp = await fetch("/api/terminal/session/" + sessionId + "/history", {credentials: "same-origin"});
-                if (!resp.ok) return;
-                const data = await resp.json();
-                const msgs = data.messages || [];
-                if (inFlight) resyncedMidTurn = true;
-                cancelAssistantDone();
-                currentAssistantEl = null;
-                feed.innerHTML = "";
-                paintHistoryRows(msgs);
-                // Confirm sent-but-unconfirmed queued messages that made it
-                // into the ledger (their echo event was lost with the gap).
-                const histUserTexts = msgs
-                    .filter(function (m) { return m.role === "user"; })
-                    .map(function (m) { return flattenContent(m.content); });
-                while (pendingQueue.length > 0 && pendingQueue[0].sent &&
-                       histUserTexts.indexOf(pendingQueue[0].text) !== -1) {
-                    pendingQueue.shift();
-                }
-                // Repaint what's still pending so queued sends stay visible.
-                pendingQueue.forEach(function (item) {
-                    const lineEl = document.createElement("div");
-                    lineEl.className = "term-line term-user term-pending";
-                    lineEl.textContent = "> " + item.text;
-                    item.el = lineEl;
-                    item.pill = null;
-                    feed.appendChild(lineEl);
-                });
-                feed.scrollTop = feed.scrollHeight;
-            } catch (e) {
-            } finally {
-                resyncing = false;
-            }
-            trySendFront();
-        }
-        async function load() {
-            applyLabel();
-            deleteBtn.hidden = false;
-            try {
-                const resp = await fetch("/api/terminal/session/" + sessionId + "/history", {credentials: "same-origin"});
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const msgs = data.messages || [];
-                    paintHistoryRows(msgs);
-                    if (msgs.length > 0) appendLine("term-system", "— history · live below —");
-                }
-            } catch (e) {}
-            if (session.summary && session.summary !== "New session") {
-                appendLine("term-system", "context: " + session.summary);
-            }
-            connectStream(sessionId);
-        }
-
-        const panel = {
-            el: el,
-            get sessionId() { return sessionId; },
-            mindId: function () { return mindId; },
-            load: load,
-            focus: function () { focusedPanel = panel; input.focus(); },
-            getInputValue: function () { return input.value; },
-            setInputValue: function (v) { input.value = v; autoGrowInput(); },
-            setMicLabel: function (state) {
-                if (state === "on") { micBtn.textContent = "listening…"; micBtn.classList.add("term-mic-on"); }
-                else if (state === "error") { micBtn.textContent = "mic error"; micBtn.classList.remove("term-mic-on"); }
-                else { micBtn.textContent = "mic"; micBtn.classList.remove("term-mic-on"); }
-            },
-            destroy: function () {
-                destroyed = true;
-                document.removeEventListener("visibilitychange", onVisibilityChange);
-                if (micTarget === panel) stopMic();
-                disconnectStream();
-                cancelReattachLoop();
-                cancelAssistantDone();
-                if (ttsFlushTimer) { clearTimeout(ttsFlushTimer); ttsFlushTimer = null; }
-                try { audioEl.pause(); audioEl.src = ""; } catch (e) {}
-                ttsQueue.length = 0;
-                if (el.parentNode) el.parentNode.removeChild(el);
-            },
+    function attach(sessionId) {
+        closeSocket();
+        currentSessionId = sessionId;
+        term.reset();
+        setStatus("connecting…");
+        const socket = new WebSocket(wsUrl(sessionId));
+        socket.binaryType = "arraybuffer";
+        socket.onopen = () => setStatus("attached");
+        socket.onmessage = (ev) => {
+            term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
         };
-        return panel;
+        socket.onclose = () => {
+            if (ws === socket) ws = null;
+            setStatus("disconnected");
+        };
+        socket.onerror = () => setStatus("connection error");
+        ws = socket;
     }
 
-    // ── grid / stage management ───────────────────────────────────
-    function relayoutGrid() {
-        const n = openPanels.size;
-        gridEl.dataset.count = String(n);
-        gridEmpty.hidden = n > 0;
-        if (n > 0) {
-            const cols = Math.min(n, Math.ceil(Math.sqrt(n)));
-            gridEl.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
-        } else {
-            gridEl.style.gridTemplateColumns = "";
-        }
-    }
+    term.onData(sendBytes);
 
-    function reKey(oldId, newId) {
-        if (oldId === newId) return;
-        const panel = openPanels.get(oldId);
-        if (!panel) return;
-        openPanels.delete(oldId);
-        openPanels.set(newId, panel);
-        saveOpenSet();
-        renderCards(lastMinds);
-    }
+    async function loadSessions(preferId) {
+        setStatus("loading sessions…");
+        let rows = [];
+        try {
+            const resp = await fetch("/api/terminal/sessions", { credentials: "same-origin" });
+            if (resp.ok) rows = await resp.json();
+        } catch (err) { /* rows stays empty; message below covers it */ }
 
-    function closePanel(panel) {
-        openPanels.delete(panel.sessionId);
-        panel.destroy();
-        if (focusedPanel === panel) focusedPanel = null;
-        relayoutGrid();
-        saveOpenSet();
-        renderCards(lastMinds);
-        if (!isWide() && openPanels.size === 0) showView("list");
-    }
-
-    function addPanel(session) {
-        // already open → just focus it
-        const existing = openPanels.get(session.id);
-        if (existing) {
-            existing.focus();
-            if (!isWide()) showView("stage");
+        sel.innerHTML = "";
+        if (!Array.isArray(rows) || !rows.length) {
+            const opt = document.createElement("option");
+            opt.textContent = "no active sessions — start one with + new";
+            opt.disabled = true;
+            sel.appendChild(opt);
+            closeSocket();
+            currentSessionId = null;
+            setStatus("no sessions");
             return;
         }
-        // mobile is single-panel: replace whatever's open
-        if (!isWide()) {
-            Array.from(openPanels.values()).forEach(function (p) { openPanels.delete(p.sessionId); p.destroy(); });
+        for (const row of rows) {
+            const opt = document.createElement("option");
+            opt.value = row.id;
+            opt.textContent = row.mind_name + " · " + row.short_id + " · " + row.status + " · " + row.age +
+                (row.summary ? " · " + row.summary.slice(0, 48) : "");
+            sel.appendChild(opt);
         }
-        const panel = createPanel(session);
-        openPanels.set(session.id, panel);
-        gridEl.appendChild(panel.el);
-        relayoutGrid();
-        panel.load();
-        panel.focus();
-        saveOpenSet();
-        renderCards(lastMinds);
-        if (!isWide()) showView("stage");
+        const pick = preferId && rows.some((r) => r.id === preferId) ? preferId : rows[0].id;
+        sel.value = pick;
+        attach(pick);
     }
 
-    function showView(name) { termApp.dataset.view = name; }
+    sel.addEventListener("change", () => attach(sel.value));
+    refreshBtn.addEventListener("click", () => loadSessions(currentSessionId));
 
-    // ── session list rendering ────────────────────────────────────
-    function isActiveStatus(status) { return ACTIVE_STATUSES.has((status || "").toLowerCase()); }
-    function statusDotClass(status) {
-        const s = (status || "").toLowerCase();
-        if (s === "running") return "is-running";
-        if (s === "idle") return "is-idle";
-        return "is-closed";
-    }
-
-    function renderCards(minds) {
-        lastMinds = minds || [];
-        listEl.innerHTML = "";
-        let count = 0;
-        lastMinds.forEach(function (mind) {
-            const sessions = (mind.sessions || []).filter(function (s) {
-                const active = isActiveStatus(s.status);
-                return currentFilter === "active" ? active : !active;
-            });
-            if (!sessions.length) return;
-            const group = document.createElement("div");
-            group.className = "term-mind-group";
-            group.textContent = mind.name;
-            listEl.appendChild(group);
-            sessions.forEach(function (s) {
-                const card = document.createElement("button");
-                card.type = "button";
-                card.className = "term-card" + (openPanels.has(s.id) ? " is-current" : "");
-                card.dataset.sessionId = s.id;
-                card.dataset.mindId = mind.id;
-                card.dataset.mindName = mind.name;
-                card.dataset.status = s.status || "";
-                card.dataset.summary = s.summary || "";
-
-                const label = getLabel(s.id);
-                if (label.color) card.style.borderLeft = "3px solid " + label.color;
-
-                const dot = document.createElement("span");
-                dot.className = "term-card-dot " + statusDotClass(s.status);
-                if (label.color) dot.style.background = label.color;
-
-                const body = document.createElement("span");
-                body.className = "term-card-body";
-                const title = document.createElement("span");
-                title.className = "term-card-title";
-                title.innerHTML = '<span class="term-card-name"></span> <span class="term-card-id"></span>';
-                title.querySelector(".term-card-name").textContent = (label.name || "").trim() || mind.name;
-                title.querySelector(".term-card-id").textContent = s.short_id || (s.id || "").slice(0, 8);
-                const meta = document.createElement("span");
-                meta.className = "term-card-meta";
-                meta.textContent = (s.status || "") + (s.age ? " · " + s.age : "");
-                body.appendChild(title);
-                body.appendChild(meta);
-                if (s.summary) {
-                    const sum = document.createElement("span");
-                    sum.className = "term-card-summary";
-                    sum.textContent = s.summary;
-                    body.appendChild(sum);
-                }
-                card.appendChild(dot);
-                card.appendChild(body);
-                card.addEventListener("click", function () {
-                    addPanel({
-                        id: card.dataset.sessionId,
-                        mind_id: card.dataset.mindId,
-                        mind_name: card.dataset.mindName,
-                        status: card.dataset.status || "running",
-                        summary: card.dataset.summary || "",
-                    });
-                });
-                listEl.appendChild(card);
-                count += 1;
-            });
+    killBtn.addEventListener("click", async () => {
+        if (!currentSessionId) return;
+        if (!confirm("End this session's process? The conversation branch is kept.")) return;
+        await fetch("/api/terminal/sessions/" + encodeURIComponent(currentSessionId), {
+            method: "DELETE", credentials: "same-origin",
         });
-        listEmpty.hidden = count > 0;
-        listEmpty.textContent = currentFilter === "active" ? "No active sessions." : "No archived sessions.";
-    }
+        closeSocket();
+        await loadSessions(null);
+    });
 
-    async function refreshSelector() {
+    newBtn.addEventListener("click", async () => {
+        if (!newMenu.hidden) {
+            newMenu.hidden = true;
+            return;
+        }
+        newMenu.hidden = false;
+        newMenu.textContent = "loading minds…";
+        let minds = [];
         try {
-            const resp = await fetch("/api/terminal/selector", {credentials: "same-origin"});
-            if (!resp.ok) return;
-            rebuildSelector(await resp.json());
-        } catch (err) {}
-    }
-    function rebuildSelector(minds) {
-        mindSelect.innerHTML = "";
-        (minds || []).forEach(function (mind) {
-            const group = document.createElement("optgroup");
-            group.label = mind.name + " · " + (mind.id || "").slice(0, 8);
-            const newOpt = document.createElement("option");
-            newOpt.value = "new:" + mind.id;
-            newOpt.dataset.action = "new";
-            newOpt.dataset.mindId = mind.id;
-            newOpt.dataset.mindName = mind.name;
-            newOpt.textContent = "— new session for " + mind.name + " —";
-            group.appendChild(newOpt);
-            (mind.sessions || []).forEach(function (s) {
-                const opt = document.createElement("option");
-                opt.value = "session:" + s.id;
-                opt.dataset.action = "load";
-                opt.dataset.sessionId = s.id;
-                opt.dataset.mindId = mind.id;
-                opt.dataset.mindName = mind.name;
-                opt.dataset.status = s.status || "";
-                opt.dataset.summary = s.summary || "";
-                opt.textContent = mind.name + " · " + s.short_id + " · " + s.status + " · " + s.age;
-                group.appendChild(opt);
-            });
-            mindSelect.appendChild(group);
-        });
-        renderCards(minds || []);
-    }
-
-    // ── new session ───────────────────────────────────────────────
-    async function spawnSession(mind) {
-        newMenu.hidden = true;
-        try {
-            const resp = await fetch("/api/terminal/session", {
-                method: "POST", credentials: "same-origin",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({mind_id: mind.id}),
-            });
-            if (!resp.ok) return;
-            const sess = await resp.json();
-            addPanel({
-                id: sess.id,
-                mind_id: sess.mind_id || mind.id,
-                mind_name: mind.name,
-                status: sess.status || "running",
-                summary: sess.summary || "New session",
-            });
-            await refreshSelector();
-        } catch (err) {}
-    }
-    function toggleNewMenu() {
-        const minds = lastMinds.filter(function (m) { return m && m.id; });
-        if (minds.length === 0) return;
-        if (minds.length === 1) { spawnSession(minds[0]); return; }
-        if (!newMenu.hidden) { newMenu.hidden = true; return; }
+            const resp = await fetch("/api/minds", { credentials: "same-origin" });
+            if (resp.ok) minds = await resp.json();
+        } catch (err) { /* minds stays empty; message below covers it */ }
         newMenu.innerHTML = "";
-        minds.forEach(function (m) {
+        if (!Array.isArray(minds) || !minds.length) {
+            newMenu.textContent = "no minds registered";
+            return;
+        }
+        for (const mind of minds) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "term-new-menu-item";
-            btn.textContent = "new · " + m.name;
-            btn.addEventListener("click", function () { spawnSession(m); });
+            btn.textContent = mind.name || mind.id;
+            btn.addEventListener("click", async () => {
+                newMenu.hidden = true;
+                setStatus("creating session…");
+                try {
+                    const created = await fetch("/api/terminal/sessions", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "same-origin",
+                        body: JSON.stringify({ mind_id: mind.id }),
+                    });
+                    if (!created.ok) {
+                        setStatus("failed to create session");
+                        return;
+                    }
+                    const session = await created.json();
+                    await loadSessions(session.id);
+                } catch (err) {
+                    setStatus("failed to create session");
+                }
+            });
             newMenu.appendChild(btn);
-        });
-        newMenu.hidden = false;
-    }
-    newBtn.addEventListener("click", toggleNewMenu);
-    document.addEventListener("click", function (e) {
-        if (!newMenu.hidden && !newMenu.contains(e.target) && e.target !== newBtn) newMenu.hidden = true;
+        }
     });
 
-    // ── filter tabs ───────────────────────────────────────────────
-    function setFilter(filter) {
-        currentFilter = filter;
-        const activeSel = filter === "active";
-        tabActive.classList.toggle("is-active", activeSel);
-        tabArchived.classList.toggle("is-active", !activeSel);
-        tabActive.setAttribute("aria-selected", activeSel ? "true" : "false");
-        tabArchived.setAttribute("aria-selected", activeSel ? "false" : "true");
-        renderCards(lastMinds);
-    }
-    tabActive.addEventListener("click", function () { setFilter("active"); });
-    tabArchived.addEventListener("click", function () { setFilter("archived"); });
-    if (refreshBtn) refreshBtn.addEventListener("click", function () { refreshSelector(); });
+    toolbar.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-seq]");
+        if (btn) sendBytes(btn.dataset.seq);
+    });
 
-    // ── rail collapse (desktop) ───────────────────────────────────
-    function setRail(collapsed) {
-        termApp.dataset.rail = collapsed ? "collapsed" : "expanded";
-        railExpandBtn.hidden = !collapsed;
-        try { localStorage.setItem("term-rail", collapsed ? "collapsed" : "expanded"); } catch (e) {}
-    }
-    railCollapseBtn.addEventListener("click", function () { setRail(true); });
-    railExpandBtn.addEventListener("click", function () { setRail(false); });
-
-    // ── boot ──────────────────────────────────────────────────────
-    function mindsFromSeed() {
-        const groups = Array.from(mindSelect.querySelectorAll("optgroup"));
-        return groups.map(function (g) {
-            const opts = Array.from(g.querySelectorAll('option[data-action="load"]'));
-            const first = g.querySelector('option[data-action="new"]');
-            return {
-                id: (first && first.dataset.mindId) || (opts[0] && opts[0].dataset.mindId) || "",
-                name: (first && first.dataset.mindName) || (opts[0] && opts[0].dataset.mindName) || "mind",
-                sessions: opts.map(function (o) {
-                    return {
-                        id: o.dataset.sessionId,
-                        short_id: o.dataset.shortId || (o.dataset.sessionId || "").slice(0, 8),
-                        status: o.dataset.status || "",
-                        age: o.dataset.age || "",
-                        last_active: o.dataset.lastActive || "",
-                        summary: o.dataset.summary || "",
-                    };
-                }),
-            };
-        });
-    }
-
-    try {
-        if (localStorage.getItem("term-rail") === "collapsed" && isWide()) setRail(true);
-    } catch (e) {}
-
-    showView("list");
-    const seed = mindsFromSeed();
-    renderCards(seed);
-    refreshSelector();
-
-    // Desktop: reopen the previously-open grid (or fall back to the most recent
-    // active session so the stage isn't empty). Mobile lands on the list.
-    if (isWide()) {
-        const wanted = recalledOpenSet();
-        const byId = {};
-        seed.forEach(function (m) {
-            (m.sessions || []).forEach(function (s) {
-                if (isActiveStatus(s.status)) byId[s.id] = {m: m, s: s};
-            });
-        });
-        let opened = 0;
-        wanted.forEach(function (id) {
-            const hit = byId[id];
-            if (!hit) return;
-            addPanel({id: hit.s.id, mind_id: hit.m.id, mind_name: hit.m.name, status: hit.s.status, summary: hit.s.summary});
-            opened += 1;
-        });
-        if (opened === 0) {
-            const first = Object.values(byId)[0];
-            if (first) addPanel({id: first.s.id, mind_id: first.m.id, mind_name: first.m.name, status: first.s.status, summary: first.s.summary});
-        }
-    }
+    loadSessions(null);
 })();
 </script>
 {% endblock %}
