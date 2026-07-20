@@ -559,3 +559,79 @@ def test_terminal_session_create_uses_unique_client_ref_per_tile(tmp_path, monke
     assert all(ref.startswith("terminal-") for ref in refs)
     # owner_ref stays the stable surface label; only client_ref is per-tile.
     assert all(body["owner_ref"] == "terminal" for body in captured)
+
+
+def test_console_stream_sets_anti_buffering_headers(tmp_path, monkeypatch):
+    """SSE must carry no-cache/no-transform + X-Accel-Buffering headers so
+    intermediaries (Cloudflare) neither buffer nor transform the stream —
+    buffered SSE arrives in delayed bursts and loses events on idle cuts."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_proxy(session_id):
+        yield "data: {\"type\":\"ping\"}\n\n"
+
+    with patch("main._proxy_session_events", side_effect=fake_proxy):
+        response = client.get("/api/console/sess-1/stream")
+
+    assert response.status_code == 200
+    assert "no-cache" in response.headers["cache-control"]
+    assert "no-transform" in response.headers["cache-control"]
+    assert response.headers["x-accel-buffering"] == "no"
+
+
+def test_proxy_session_events_passes_ping_through():
+    """Gateway heartbeat pings must reach the browser to keep the SSE
+    connection warm through proxy idle timeouts."""
+    lines = [
+        'data: {"type":"ping","session_id":"sess-1"}',
+        "",
+        'data: {"type":"assistant","content":"hi"}',
+        "",
+    ]
+    stream_cm = _FakeStreamResponse(lines)
+    fake_client = _FakeAsyncClient(stream_cm)
+    with patch("main.httpx.AsyncClient", return_value=fake_client):
+        events = asyncio.run(_collect(main_mod._proxy_session_events("sess-1")))
+
+    assert events[0] == 'data: {"type":"ping","session_id":"sess-1"}\n\n'
+
+
+def test_terminal_page_resyncs_history_after_stream_gap(tmp_path, monkeypatch):
+    """Events published while the SSE stream is down are never replayed by
+    the gateway, so the page must repaint from the turn ledger on every
+    reconnect and on returning to a backgrounded tab."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "resyncFromHistory" in body
+    assert "needsResync" in body
+    assert "visibilitychange" in body
+
+
+def test_terminal_page_walks_to_successor_on_deleted_session(tmp_path, monkeypatch):
+    """A 404 from the gateway events endpoint means the session row is gone
+    (deleted outright, not just rotated) — the page must run the same
+    successor walk as session_closed instead of reconnecting forever."""
+    client = _authed_client(tmp_path, monkeypatch)
+
+    async def fake_gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "ada-id", "name": "ada"}]
+        return []
+
+    with patch("main._gateway_json", side_effect=fake_gateway_json):
+        response = client.get("/terminal")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "handleSessionGone" in body
+    assert "upstream_error: 404" in body

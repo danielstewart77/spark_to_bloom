@@ -255,6 +255,9 @@
         const pendingQueue = []; // FIFO of {text, el, pill, sent} — queued while a turn is in flight
         let assistantDoneTimer = null;
         let destroyed = false;
+        let needsResync = false;   // stream dropped — repaint from history on reconnect
+        let resyncedMidTurn = false; // repainted while a turn was streaming — resync again at result
+        let resyncing = false;
 
         function queueFront() { return pendingQueue[0] || null; }
 
@@ -500,20 +503,36 @@
                 inFlight = false;
                 currentAssistantEl = null;
                 flushTtsNow();
+                if (resyncedMidTurn) {
+                    // The feed was rebuilt from history while this turn was
+                    // still streaming, so its earlier chunks are missing on
+                    // screen. Now that the turn is in the ledger, repaint.
+                    resyncedMidTurn = false;
+                    resyncFromHistory();
+                }
                 trySendFront();
             } else if (event.type === "session_closed") {
-                cancelAssistantDone();
-                currentAssistantEl = null;
-                inFlight = false;
-                // Keep the queue — the old session may never have received
-                // an unconfirmed front item, so mark it unsent and retry
-                // once reattached rather than dropping queued messages.
-                pendingQueue.forEach(function (item) { item.sent = false; });
-                sessionWasClosed = true;
-                disconnectStream();
-                beginReattachLoop();
+                handleSessionGone();
+            } else if (event.type === "system" && typeof event.content === "string" &&
+                       event.content.indexOf("upstream_error: 404") === 0) {
+                // Session row is gone on the gateway (deleted, not just
+                // rotated) — walk to a successor instead of reconnecting
+                // to a dead stream forever.
+                handleSessionGone();
             }
-            // tool events are intentionally ignored
+            // ping and tool events are intentionally ignored
+        }
+        function handleSessionGone() {
+            cancelAssistantDone();
+            currentAssistantEl = null;
+            inFlight = false;
+            // Keep the queue — the old session may never have received
+            // an unconfirmed front item, so mark it unsent and retry
+            // once reattached rather than dropping queued messages.
+            pendingQueue.forEach(function (item) { item.sent = false; });
+            sessionWasClosed = true;
+            disconnectStream();
+            beginReattachLoop();
         }
         function disconnectStream() {
             if (eventSource) { eventSource.close(); eventSource = null; }
@@ -521,16 +540,35 @@
         function connectStream(id) {
             disconnectStream();
             eventSource = new EventSource("/api/console/" + id + "/stream");
+            eventSource.onopen = function () {
+                // Events published while the stream was down are gone —
+                // the gateway keeps no observer history. Repaint from the
+                // durable turn ledger after every gap.
+                if (needsResync && sessionId === id && !destroyed && !sessionWasClosed) {
+                    needsResync = false;
+                    resyncFromHistory();
+                }
+            };
             eventSource.onmessage = function (msg) {
                 try { handleEvent(JSON.parse(msg.data)); } catch (e) {}
             };
             eventSource.onerror = function () {
                 if (sessionWasClosed || destroyed) return;
+                needsResync = true;
                 setTimeout(function () {
                     if (sessionId === id && !sessionWasClosed && !destroyed) connectStream(id);
                 }, 3000);
             };
         }
+        function onVisibilityChange() {
+            if (document.visibilityState !== "visible" || destroyed || sessionWasClosed || !sessionId) return;
+            // Mobile browsers suspend timers and sockets in background tabs;
+            // whatever streamed while suspended is lost. Catch up, and
+            // revive the stream if the browser silently killed it.
+            resyncFromHistory();
+            if (!eventSource || eventSource.readyState === 2) connectStream(sessionId);
+        }
+        document.addEventListener("visibilitychange", onVisibilityChange);
 
         function cancelReattachLoop() {
             if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
@@ -684,6 +722,64 @@
         backBtn.addEventListener("click", function () { closePanel(panel); });
 
         // ── history load + go live ────────────────────────────────
+        function paintHistoryRows(msgs) {
+            for (const m of msgs) {
+                const body = flattenContent(m.content);
+                if (!body) continue;
+                if (m.role === "user") {
+                    appendLine("term-user", "> " + body);
+                } else if (m.role === "assistant") {
+                    const line = document.createElement("div");
+                    line.className = "term-line term-assistant";
+                    line.dataset.prefix = (mindName || "mind") + " > ";
+                    line.textContent = line.dataset.prefix + body;
+                    feed.appendChild(line);
+                }
+            }
+            feed.scrollTop = feed.scrollHeight;
+        }
+        // Rebuild the feed from the durable turn ledger. Called after any
+        // stream gap: the gateway fans events out only to currently
+        // connected observers, so anything published during a gap never
+        // reaches this client any other way.
+        async function resyncFromHistory() {
+            if (resyncing || destroyed || !sessionId) return;
+            resyncing = true;
+            try {
+                const resp = await fetch("/api/terminal/session/" + sessionId + "/history", {credentials: "same-origin"});
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const msgs = data.messages || [];
+                if (inFlight) resyncedMidTurn = true;
+                cancelAssistantDone();
+                currentAssistantEl = null;
+                feed.innerHTML = "";
+                paintHistoryRows(msgs);
+                // Confirm sent-but-unconfirmed queued messages that made it
+                // into the ledger (their echo event was lost with the gap).
+                const histUserTexts = msgs
+                    .filter(function (m) { return m.role === "user"; })
+                    .map(function (m) { return flattenContent(m.content); });
+                while (pendingQueue.length > 0 && pendingQueue[0].sent &&
+                       histUserTexts.indexOf(pendingQueue[0].text) !== -1) {
+                    pendingQueue.shift();
+                }
+                // Repaint what's still pending so queued sends stay visible.
+                pendingQueue.forEach(function (item) {
+                    const lineEl = document.createElement("div");
+                    lineEl.className = "term-line term-user term-pending";
+                    lineEl.textContent = "> " + item.text;
+                    item.el = lineEl;
+                    item.pill = null;
+                    feed.appendChild(lineEl);
+                });
+                feed.scrollTop = feed.scrollHeight;
+            } catch (e) {
+            } finally {
+                resyncing = false;
+            }
+            trySendFront();
+        }
         async function load() {
             applyLabel();
             deleteBtn.hidden = false;
@@ -692,20 +788,7 @@
                 if (resp.ok) {
                     const data = await resp.json();
                     const msgs = data.messages || [];
-                    for (const m of msgs) {
-                        const body = flattenContent(m.content);
-                        if (!body) continue;
-                        if (m.role === "user") {
-                            appendLine("term-user", "> " + body);
-                        } else if (m.role === "assistant") {
-                            const line = document.createElement("div");
-                            line.className = "term-line term-assistant";
-                            line.dataset.prefix = (mindName || "mind") + " > ";
-                            line.textContent = line.dataset.prefix + body;
-                            feed.appendChild(line);
-                            feed.scrollTop = feed.scrollHeight;
-                        }
-                    }
+                    paintHistoryRows(msgs);
                     if (msgs.length > 0) appendLine("term-system", "— history · live below —");
                 }
             } catch (e) {}
@@ -730,6 +813,7 @@
             },
             destroy: function () {
                 destroyed = true;
+                document.removeEventListener("visibilitychange", onVisibilityChange);
                 if (micTarget === panel) stopMic();
                 disconnectStream();
                 cancelReattachLoop();
