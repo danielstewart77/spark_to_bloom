@@ -803,6 +803,15 @@ async def ws_terminal_attach(websocket: WebSocket, session_id: str):
             additional_headers=_gateway_headers(),
         ) as mind_ws:
             await _pump_terminal_ws(websocket, mind_ws)
+            # Propagate the gateway's close code — 4410 ("session closed")
+            # is how the browser distinguishes a deliberate end from a
+            # rotation it should hunt a successor for.
+            code = mind_ws.close_code
+            if code and 4000 <= code <= 4999:
+                try:
+                    await websocket.close(code=code, reason=mind_ws.close_reason or "")
+                except RuntimeError:
+                    pass  # browser already gone
     except (OSError, WebSocketException):
         await websocket.close(code=1011, reason="terminal unreachable")
 
