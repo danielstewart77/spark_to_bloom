@@ -503,6 +503,47 @@ def test_attach_ws_relays_browser_input_to_mind(tmp_path, monkeypatch):
             assert fake_ws.sent == [b"/help\n"]
 
 
+def test_attach_ws_forwards_resize_text_frames_as_text(tmp_path, monkeypatch):
+    """TEXT frames are the resize control channel; re-encoding them into the
+    byte stream would type JSON into the TUI instead of resizing the pty."""
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[])
+
+    def _fake_connect(url, **kwargs):
+        return fake_ws
+
+    resize = '{"type":"resize","cols":100,"rows":30}'
+    with patch("main.websockets.connect", _fake_connect):
+        with client.websocket_connect("/api/terminal/attach/sess-2") as ws:
+            ws.send_text(resize)
+            ws.send_bytes(b"ls\n")
+            import time
+            for _ in range(40):
+                if len(fake_ws.sent) >= 2:
+                    break
+                time.sleep(0.05)
+            assert fake_ws.sent == [resize, b"ls\n"]
+            assert isinstance(fake_ws.sent[0], str)
+
+
+def test_attach_ws_passes_tile_geometry_to_gateway(tmp_path, monkeypatch):
+    """cols/rows from the browser tile ride the attach URL so the pty spawns
+    at the tile's real geometry instead of a blind 80x24."""
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[b"ready"])
+
+    def _fake_connect(url, **kwargs):
+        _fake_connect.requested_url = url
+        return fake_ws
+
+    with patch("main.websockets.connect", _fake_connect):
+        with client.websocket_connect("/api/terminal/attach/sess-1?cols=132&rows=43") as ws:
+            ws.receive_bytes()
+
+    assert "cols=132" in _fake_connect.requested_url
+    assert "rows=43" in _fake_connect.requested_url
+
+
 def test_attach_ws_closes_1011_when_gateway_unreachable(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 

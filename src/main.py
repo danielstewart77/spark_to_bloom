@@ -737,27 +737,31 @@ async def api_memory_rows(
     }
 
 
-def _gateway_ws_url(session_id: str) -> str:
+def _gateway_ws_url(session_id: str, cols: str = "80", rows: str = "24") -> str:
     ws_base = _gateway_base_url().rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
-    return f"{ws_base}/sessions/{session_id}/attach"
+    query = urllib.parse.urlencode({"cols": cols, "rows": rows})
+    return f"{ws_base}/sessions/{session_id}/attach?{query}"
 
 
 async def _pump_terminal_ws(browser_ws: WebSocket, mind_ws) -> None:
-    """Bridge raw bytes between the browser's terminal WS and hive-comms' attach WS.
+    """Bridge the browser's terminal WS and hive-comms' attach WS.
 
-    Whichever side closes first ends the bridge — an attached pty and a
-    browser tab have no independent life of their own once either end is gone.
+    Frame types are load-bearing on the browser→mind leg: BINARY frames
+    are raw terminal bytes, TEXT frames are JSON control messages
+    (resize) — so TEXT is forwarded as TEXT (websockets sends str frames
+    as TEXT), never re-encoded into the byte stream. Whichever side
+    closes first ends the bridge — an attached pty and a browser tab
+    have no independent life of their own once either end is gone.
     """
     async def browser_to_mind() -> None:
         while True:
             msg = await browser_ws.receive()
             if msg.get("type") == "websocket.disconnect":
                 return
-            data = msg.get("bytes")
-            if data is None and msg.get("text") is not None:
-                data = msg["text"].encode()
-            if data:
-                await mind_ws.send(data)
+            if msg.get("bytes"):
+                await mind_ws.send(msg["bytes"])
+            elif msg.get("text"):
+                await mind_ws.send(msg["text"])
 
     async def mind_to_browser() -> None:
         async for data in mind_ws:
@@ -791,9 +795,11 @@ async def ws_terminal_attach(websocket: WebSocket, session_id: str):
         return
 
     await websocket.accept()
+    cols = websocket.query_params.get("cols") or "80"
+    rows = websocket.query_params.get("rows") or "24"
     try:
         async with websockets.connect(
-            _gateway_ws_url(session_id),
+            _gateway_ws_url(session_id, cols=cols, rows=rows),
             additional_headers=_gateway_headers(),
         ) as mind_ws:
             await _pump_terminal_ws(websocket, mind_ws)
