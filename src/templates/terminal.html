@@ -394,9 +394,17 @@
             socket.onmessage = (ev) => {
                 term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
             };
-            socket.onclose = () => {
+            socket.onclose = (ev) => {
                 if (ws === socket) ws = null;
                 if (destroyed || deliberateClose) return;
+                // 4410 = the gateway closed the session on purpose
+                // (end-session, /kill). Don't hunt a successor — report
+                // the ending and let the rail refile it under Archived.
+                if (ev && ev.code === 4410) {
+                    setAttachState("session ended");
+                    refreshSessions();
+                    return;
+                }
                 // Rotation kills the pty out from under the tile; hunt for
                 // the successor session instead of sitting dead forever.
                 setAttachState("disconnected");

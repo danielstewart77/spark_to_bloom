@@ -435,9 +435,12 @@ def test_terminal_session_delete_proxies_to_gateway(tmp_path, monkeypatch):
 class _FakeMindWS:
     """Stands in for a websockets.ClientConnection."""
 
-    def __init__(self, incoming=None):
+    def __init__(self, incoming=None, close_code=None, close_reason=None):
         self._incoming = list(incoming or [])
         self._block = asyncio.Event()
+        self._ends = close_code is not None
+        self.close_code = close_code
+        self.close_reason = close_reason
         self.sent = []
 
     def __aiter__(self):
@@ -446,6 +449,8 @@ class _FakeMindWS:
     async def __anext__(self):
         if self._incoming:
             return self._incoming.pop(0)
+        if self._ends:  # gateway closed the connection
+            raise StopAsyncIteration
         await self._block.wait()  # never set — blocks until the pump is cancelled
         raise StopAsyncIteration
 
@@ -542,6 +547,27 @@ def test_attach_ws_passes_tile_geometry_to_gateway(tmp_path, monkeypatch):
 
     assert "cols=132" in _fake_connect.requested_url
     assert "rows=43" in _fake_connect.requested_url
+
+
+def test_attach_ws_propagates_gateway_close_code(tmp_path, monkeypatch):
+    """4410 ("session closed") from the gateway must reach the browser —
+    it's how the tile tells a deliberate end from a rotation it should
+    hunt a successor for."""
+    from starlette.websockets import WebSocketDisconnect
+
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[b"bye\r\n"], close_code=4410, close_reason="session closed")
+
+    def _fake_connect(url, **kwargs):
+        return fake_ws
+
+    with patch("main.websockets.connect", _fake_connect):
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/terminal/attach/sess-1") as ws:
+                assert ws.receive_bytes() == b"bye\r\n"
+                ws.receive_bytes()  # gateway closes; proxy re-closes with its code
+
+    assert excinfo.value.code == 4410
 
 
 def test_attach_ws_closes_1011_when_gateway_unreachable(tmp_path, monkeypatch):
