@@ -82,31 +82,62 @@
         try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
     }
 
-    // ── per-session labels (custom name + color), local to this browser ──
+    // ── per-session labels (custom name + color), server-backed ──────
+    // Stored via /api/terminal/labels so names and colors follow the user
+    // across devices; localStorage is only a warm-start cache (and the
+    // migration source for labels created before the server store).
     const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
-    function loadLabels() {
+    let labelsCache = (function () {
         try { return JSON.parse(localStorage.getItem("term-labels") || "{}") || {}; } catch (e) { return {}; }
+    })();
+    function cacheLabelsLocally() {
+        try { localStorage.setItem("term-labels", JSON.stringify(labelsCache)); } catch (e) {}
     }
-    function saveLabels(map) {
-        try { localStorage.setItem("term-labels", JSON.stringify(map)); } catch (e) {}
+    function pushLabel(id, label) {
+        fetch("/api/terminal/labels/" + encodeURIComponent(id), {
+            method: "PUT", credentials: "same-origin",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name: label.name || "", color: label.color || ""}),
+        }).catch(function () {});
+    }
+    async function syncLabelsFromServer() {
+        let server = null;
+        try {
+            const resp = await fetch("/api/terminal/labels", {credentials: "same-origin"});
+            if (resp.ok) server = await resp.json();
+        } catch (e) {}
+        if (!server || typeof server !== "object") return;
+        // One-time migration: labels this browser has that the server lacks.
+        Object.keys(labelsCache).forEach(function (id) {
+            if (!server[id]) pushLabel(id, labelsCache[id]);
+        });
+        labelsCache = Object.assign({}, labelsCache, server);
+        cacheLabelsLocally();
+        renderCards(lastRows);
+        openPanels.forEach(function (p) { p.refreshLabel(); });
     }
     function getLabel(id) {
         if (!id) return {};
-        const l = loadLabels()[id];
+        const l = labelsCache[id];
         return (l && typeof l === "object") ? l : {};
     }
     function setLabel(id, patch) {
         if (!id) return;
-        const map = loadLabels();
-        const cur = (map[id] && typeof map[id] === "object") ? map[id] : {};
+        const cur = (labelsCache[id] && typeof labelsCache[id] === "object") ? labelsCache[id] : {};
         const next = Object.assign({}, cur, patch);
-        if (!next.name && !next.color) delete map[id]; else map[id] = next;
-        saveLabels(map);
+        if (!next.name && !next.color) delete labelsCache[id]; else labelsCache[id] = next;
+        cacheLabelsLocally();
+        pushLabel(id, next);
     }
     function migrateLabel(oldId, newId) {
         if (!oldId || !newId || oldId === newId) return;
-        const map = loadLabels();
-        if (map[oldId]) { map[newId] = map[oldId]; delete map[oldId]; saveLabels(map); }
+        const label = labelsCache[oldId];
+        if (!label) return;
+        labelsCache[newId] = label;
+        delete labelsCache[oldId];
+        cacheLabelsLocally();
+        pushLabel(newId, label);
+        pushLabel(oldId, {});
     }
 
     // ── shared content helpers (assistant text out of console SSE) ──
@@ -513,6 +544,7 @@
                 if (term.cols + "x" + term.rows !== before) sendResize();
             },
             focus: function () { focusedPanel = panel; term.focus(); },
+            refreshLabel: applyLabel,
             sendBytes: function (text) {
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(new TextEncoder().encode(text));
@@ -770,6 +802,7 @@
     } catch (e) {}
 
     showView("list");
+    syncLabelsFromServer();
     refreshSessions().then(function (rows) {
         // Desktop: reopen the previously-open grid (or fall back to the most
         // recent active session so the stage isn't empty). Mobile lands on

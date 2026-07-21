@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import auth
 from auth import (
     clear_session_cookie,
     get_current_user_from_request,
@@ -641,6 +642,68 @@ async def _create_gateway_session(mind_id: str) -> dict:
 async def api_minds(user: dict = Depends(require_auth)):
     del user
     return await _gateway_json("/broker/minds")
+
+
+def _labels_db() -> sqlite3.Connection:
+    """Terminal session labels (name + color) live next to the auth tables.
+
+    Server-side so they follow the user across devices — localStorage kept
+    them per-browser, which read as losing the session on the phone.
+    """
+    conn = auth._connect()
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS terminal_labels (
+               session_id TEXT PRIMARY KEY,
+               name TEXT NOT NULL DEFAULT '',
+               color TEXT NOT NULL DEFAULT '',
+               updated_at INTEGER NOT NULL
+           )"""
+    )
+    conn.commit()
+    return conn
+
+
+_LABEL_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+
+@app.get("/api/terminal/labels")
+async def api_terminal_labels(user: dict = Depends(require_auth)):
+    del user
+    conn = _labels_db()
+    try:
+        rows = conn.execute("SELECT session_id, name, color FROM terminal_labels").fetchall()
+    finally:
+        conn.close()
+    return {r["session_id"]: {"name": r["name"], "color": r["color"]} for r in rows}
+
+
+@app.put("/api/terminal/labels/{session_id}")
+async def api_terminal_label_put(
+    session_id: str, request: Request, user: dict = Depends(require_auth)
+):
+    del user
+    body = await request.json()
+    name = (body.get("name") or "").strip()[:40]
+    color = (body.get("color") or "").strip()
+    if color and not _LABEL_COLOR_RE.match(color):
+        raise HTTPException(status_code=400, detail="color must be a hex value")
+    conn = _labels_db()
+    try:
+        if not name and not color:
+            conn.execute("DELETE FROM terminal_labels WHERE session_id = ?", (session_id,))
+        else:
+            conn.execute(
+                """INSERT INTO terminal_labels (session_id, name, color, updated_at)
+                   VALUES (?, ?, ?, strftime('%s','now'))
+                   ON CONFLICT(session_id) DO UPDATE
+                   SET name = excluded.name, color = excluded.color,
+                       updated_at = excluded.updated_at""",
+                (session_id, name, color),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "session_id": session_id, "name": name, "color": color}
 
 
 _TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
