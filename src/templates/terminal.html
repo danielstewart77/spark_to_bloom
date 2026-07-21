@@ -127,9 +127,10 @@
         return flattenContent(v);
     }
 
-    function wsUrl(sessionId) {
+    function wsUrl(sessionId, cols, rows) {
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
-        return proto + "//" + location.host + "/api/terminal/attach/" + encodeURIComponent(sessionId);
+        return proto + "//" + location.host + "/api/terminal/attach/" + encodeURIComponent(sessionId) +
+            "?cols=" + encodeURIComponent(cols || 80) + "&rows=" + encodeURIComponent(rows || 24);
     }
 
     // ── one live session, rendered as an xterm tile ────────────────
@@ -376,13 +377,20 @@
                 try { dead.close(); } catch (err) { /* already closing */ }
             }
         }
+        // TEXT frames are the control channel (the pty end parses them as
+        // JSON); terminal bytes always travel as BINARY frames.
+        function sendResize() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({type: "resize", cols: term.cols, rows: term.rows}));
+            }
+        }
         function attach() {
             closeSocket();
             term.reset();
             setAttachState("connecting…");
-            const socket = new WebSocket(wsUrl(sessionId));
+            const socket = new WebSocket(wsUrl(sessionId, term.cols, term.rows));
             socket.binaryType = "arraybuffer";
-            socket.onopen = () => setAttachState("attached");
+            socket.onopen = () => { setAttachState("attached"); sendResize(); };
             socket.onmessage = (ev) => {
                 term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
             };
@@ -492,7 +500,9 @@
                 attach();
             },
             fit: function () {
+                const before = term.cols + "x" + term.rows;
                 try { fitAddon.fit(); } catch (e) {}
+                if (term.cols + "x" + term.rows !== before) sendResize();
             },
             focus: function () { focusedPanel = panel; term.focus(); },
             sendBytes: function (text) {
