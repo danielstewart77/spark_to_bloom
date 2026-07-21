@@ -42,6 +42,7 @@
 
 <script src="{{ request.url_for('static', path='vendor/xterm/xterm.js') }}"></script>
 <script src="{{ request.url_for('static', path='vendor/xterm/addon-fit.js') }}"></script>
+<script src="{{ request.url_for('static', path='terminal-routing.js') }}"></script>
 <script>
 (function () {
     "use strict";
@@ -65,7 +66,6 @@
     const railExpandBtn = document.getElementById("term-rail-expand");
     const toolbar = document.getElementById("term-mobile-toolbar");
 
-    const ACTIVE_STATUSES = new Set(["running", "idle"]);
     const REATTACH_WINDOW_MS = 30000;
     const isWide = () => window.matchMedia("(min-width: 860px)").matches;
 
@@ -436,6 +436,13 @@
                     refreshSessions();
                     return;
                 }
+                // 1012 = another tab/tile attached to this same session and
+                // took the keyboard. Reconnecting would start a tug-of-war,
+                // so this tile stands down instead.
+                if (ev && ev.code === 1012) {
+                    setAttachState("open in another window");
+                    return;
+                }
                 // Rotation kills the pty out from under the tile; hunt for
                 // the successor session instead of sitting dead forever.
                 setAttachState("disconnected");
@@ -470,11 +477,12 @@
                 const resp = await fetch("/api/terminal/sessions", {credentials: "same-origin"});
                 if (resp.ok) {
                     const rows = await resp.json();
-                    const successor = (rows || []).find(function (r) {
-                        return r.mind_id === mindId && r.id !== deadId &&
-                            ACTIVE_STATUSES.has((r.status || "").toLowerCase());
+                    const target = TerminalRouting.pickReattachTarget(rows, {
+                        deadId: deadId,
+                        openIds: Array.from(openPanels.keys()),
                     });
-                    if (successor) { attachSuccessor(successor); return; }
+                    if (target.action === "retry") { cancelReattachLoop(); attach(); return; }
+                    if (target.action === "successor") { attachSuccessor(target.session); return; }
                 }
             } catch (err) {}
             if (Date.now() - reattachStartedAt >= REATTACH_WINDOW_MS) {
@@ -629,7 +637,7 @@
     });
 
     // ── session list rendering (flat rows grouped by mind) ────────
-    function isActiveStatus(status) { return ACTIVE_STATUSES.has((status || "").toLowerCase()); }
+    function isActiveStatus(status) { return TerminalRouting.isActive({status: status}); }
     function statusDotClass(status) {
         const s = (status || "").toLowerCase();
         if (s === "running") return "is-running";

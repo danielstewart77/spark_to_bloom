@@ -1,0 +1,96 @@
+"""Web-terminal reattach routing.
+
+Two halves of one fix: the server has to hand the browser session lineage
+(``rotated_from``), and the browser has to route on it. Without lineage a
+reconnecting terminal tile guessed at "some live session on this mind" and
+adopted whichever sibling it found — crossing two conversations and
+migrating one tile's name and colour onto the other's session.
+
+The browser half lives in ``src/static/terminal-routing.js`` and is
+exercised by ``tests/js/terminal_routing_test.mjs``, run here so one
+``pytest`` covers both sides.
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+
+import pytest
+from starlette.testclient import TestClient
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+import auth
+import main as main_mod
+
+
+def _authed_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("STB_DB_PATH", str(tmp_path / "stb.db"))
+    monkeypatch.setenv("STB_SECRET_KEY", "test-secret")
+    user = auth.create_user("daniel", "secret-pass", is_admin=True, replace=True)
+    client = TestClient(main_mod.app)
+    client.cookies.set(auth.SESSION_COOKIE_NAME, auth.create_session_token(user))
+    return client
+
+
+def _fake_gateway(monkeypatch, sessions):
+    async def _gateway_json(path, *a, **kw):
+        if path == "/broker/minds":
+            return [{"id": "mind-uuid", "name": "skippy"}]
+        if path == "/sessions":
+            return sessions
+        return []
+
+    monkeypatch.setattr(main_mod, "_gateway_json", _gateway_json)
+
+
+def test_session_list_carries_lineage(tmp_path, monkeypatch):
+    client = _authed_client(tmp_path, monkeypatch)
+    _fake_gateway(monkeypatch, [
+        {"id": "old", "mind_id": "mind-uuid", "status": "closed", "last_active": 1},
+        {"id": "new", "mind_id": "mind-uuid", "status": "running",
+         "last_active": 2, "rotated_from": "old"},
+    ])
+
+    rows = client.get("/api/terminal/sessions").json()
+
+    by_id = {r["id"]: r for r in rows}
+    assert by_id["new"]["rotated_from"] == "old"
+    assert by_id["old"]["rotated_from"] == ""
+
+
+def test_lineage_absent_is_empty_not_missing(tmp_path, monkeypatch):
+    """Older gateway rows have no such column; the key must still exist so
+    the browser's comparison is against "" rather than undefined."""
+    client = _authed_client(tmp_path, monkeypatch)
+    _fake_gateway(monkeypatch, [
+        {"id": "solo", "mind_id": "mind-uuid", "status": "running", "last_active": 1},
+    ])
+
+    rows = client.get("/api/terminal/sessions").json()
+
+    assert rows[0]["rotated_from"] == ""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_browser_reattach_routing_rules():
+    script = os.path.join(os.path.dirname(__file__), "js", "terminal_routing_test.mjs")
+    result = subprocess.run(
+        [shutil.which("node"), script], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_template_uses_the_routing_module():
+    """Guard against the inline guess creeping back into the template."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert "TerminalRouting.pickReattachTarget" in body
+    assert "terminal-routing.js" in body
+    # The old heuristic: any live session belonging to the same mind.
+    assert "r.mind_id === mindId" not in body
