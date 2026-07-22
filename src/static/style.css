@@ -996,7 +996,9 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
     background: #0b1724;
     border-bottom: 1px solid #1e2d3d;
     flex-shrink: 0;
+    transition: background-color 0.15s ease;
 }
+.term-panel-head button { transition: color 0.15s ease; }
 
 .term-panel-info {
     flex: 1;
@@ -1026,6 +1028,7 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 
 /* inline rename / recolor editor, sits between the header and the terminal */
 .term-rename-pop {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1049,6 +1052,7 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
     padding: 0.4rem 0.55rem;
 }
 .term-rename-input:focus { outline: none; border-color: #4a8fa8; }
+.term-color-picker { display: flex; align-items: center; gap: 0.4rem; }
 .term-rename-swatches { display: flex; gap: 0.3rem; }
 .term-swatch {
     width: 20px;
@@ -1059,7 +1063,57 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
     cursor: pointer;
 }
 .term-swatch.is-selected { border-color: #dce8f0; box-shadow: 0 0 0 1px #0b1724; }
+.term-swatch-more {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px dashed #3d5a6e;
+    background: transparent;
+    color: #4a8fa8;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.term-swatch-more:hover,
+.term-swatch-more[aria-expanded="true"] { color: #c9a84c; border-color: #c9a84c; }
 .term-rename-actions { display: flex; gap: 0.4rem; }
+
+/* pop-out color grid — position:fixed and placed by JS (term-panel clips
+   overflow for the xterm canvas, which would otherwise chop off anything
+   absolutely positioned inside it) */
+.term-color-grid {
+    position: fixed;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.55rem;
+    background: #0d1b28;
+    border: 1px solid #2a3f54;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.term-color-grid[hidden] { display: none; }
+.term-color-grid-row { display: flex; gap: 0.3rem; }
+.term-color-grid-custom {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid #1e2d3d;
+}
+.term-color-input {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid #2a3f54;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+}
+.term-color-custom-label { color: #4a6a7e; font-size: 0.72rem; }
 
 .term-icon-btn {
     background: transparent;

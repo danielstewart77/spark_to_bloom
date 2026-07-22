@@ -74,6 +74,24 @@
     const openPanels = new Map(); // sessionId -> panel
     let focusedPanel = null;
 
+    // readable text color against an arbitrary swatch background (perceived luminance)
+    function contrastText(hex) {
+        const c = (hex || "").replace("#", "");
+        if (c.length !== 6) return "#dce8f0";
+        const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return lum > 0.6 ? "#0b1724" : "#f4f8fb";
+    }
+    // only the focused tile paints its whole header bar; refresh both the
+    // outgoing and incoming panel so the color follows focus, not just labels
+    function setFocusedPanel(panel) {
+        if (focusedPanel === panel) return;
+        const prev = focusedPanel;
+        focusedPanel = panel;
+        if (prev && prev.refreshLabel) prev.refreshLabel();
+        if (panel && panel.refreshLabel) panel.refreshLabel();
+    }
+
     // ── open-set persistence (restore the grid across reloads) ─────
     function saveOpenSet() {
         try { localStorage.setItem("term-open", JSON.stringify(Array.from(openPanels.keys()))); } catch (e) {}
@@ -87,6 +105,12 @@
     // across devices; localStorage is only a warm-start cache (and the
     // migration source for labels created before the server store).
     const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
+    // the "more colors" pop-out grid, rows of saturated / muted / grayscale options
+    const EXTRA_COLOR_ROWS = [
+        ["#ff5c5c", "#ff8a3d", "#ffce42", "#c9e34e", "#5ce87a", "#3de0c0", "#3db6e8", "#5c8aff", "#9a5cff", "#e05cd0", "#ff5ca0"],
+        ["#e0a8a8", "#e0c2a8", "#e0d8a8", "#c2e0a8", "#a8e0b8", "#a8d8e0", "#a8b8e0", "#c2a8e0", "#e0a8d8", "#e0a8b8", "#c9a8e0"],
+        ["#ffffff", "#d8dee4", "#b0bcc6", "#8898a6", "#5c7284", "#3d5266", "#1e3448", "#0b1724"],
+    ];
     let labelsCache = (function () {
         try { return JSON.parse(localStorage.getItem("term-labels") || "{}") || {}; } catch (e) { return {}; }
     })();
@@ -187,7 +211,17 @@
             '</header>' +
             '<div class="term-rename-pop" hidden>' +
                 '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
-                '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
+                '<div class="term-color-picker">' +
+                    '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
+                    '<button type="button" class="term-swatch term-swatch-more" aria-label="more colors" aria-expanded="false">+</button>' +
+                '</div>' +
+                '<div class="term-color-grid" hidden role="group" aria-label="more colors">' +
+                    '<div class="term-color-grid-swatches"></div>' +
+                    '<div class="term-color-grid-custom">' +
+                        '<input type="color" class="term-color-input" aria-label="custom color">' +
+                        '<span class="term-color-custom-label">custom</span>' +
+                    '</div>' +
+                '</div>' +
                 '<div class="term-rename-actions">' +
                     '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
                     '<button type="button" class="term-action-btn term-rename-save">save</button>' +
@@ -195,6 +229,8 @@
             '</div>' +
             '<div class="term-xterm"></div>';
 
+        const panelHead = el.querySelector(".term-panel-head");
+        const headControls = Array.from(el.querySelectorAll(".term-panel-head button, .term-panel-head .term-panel-info"));
         const info = el.querySelector(".term-panel-info");
         const xtermEl = el.querySelector(".term-xterm");
         const speakerBtn = el.querySelector(".term-panel-speaker");
@@ -208,6 +244,10 @@
         const renameSave = el.querySelector(".term-rename-save");
         const renameClear = el.querySelector(".term-rename-clear");
         const headDot = el.querySelector(".term-panel-dot");
+        const colorMoreBtn = el.querySelector(".term-swatch-more");
+        const colorGrid = el.querySelector(".term-color-grid");
+        const colorGridSwatches = el.querySelector(".term-color-grid-swatches");
+        const colorInput = el.querySelector(".term-color-input");
 
         const term = new window.Terminal({
             convertEol: true,
@@ -260,49 +300,85 @@
             const label = getLabel(sessionId);
             setInfo();
             const color = label.color || "";
-            if (color) {
-                el.style.borderColor = color;
-                el.style.borderLeft = "3px solid " + color;
-                headDot.style.background = color;
-                headDot.hidden = false;
-            } else {
-                el.style.borderColor = "";
-                el.style.borderLeft = "";
+            el.style.borderLeft = color ? "3px solid " + color : "";
+            // the focused tile owns the full-bar treatment; everyone else
+            // keeps the thin left-edge indicator + header dot
+            const isFocused = focusedPanel === panel;
+            if (color && isFocused) {
+                const fg = contrastText(color);
+                panelHead.style.background = color;
+                headControls.forEach(function (node) { node.style.color = fg; });
                 headDot.hidden = true;
+            } else {
+                panelHead.style.background = "";
+                headControls.forEach(function (node) { node.style.color = ""; });
+                headDot.style.background = color;
+                headDot.hidden = !color;
             }
             renderCards(lastRows);
         }
+        function buildSwatch(container, c) {
+            const sw = document.createElement("button");
+            sw.type = "button";
+            sw.className = "term-swatch";
+            sw.style.background = c;
+            sw.dataset.color = c;
+            sw.setAttribute("aria-label", "color " + c);
+            sw.addEventListener("click", function () {
+                editSelectedColor = (editSelectedColor === c) ? "" : c;
+                markSwatches();
+            });
+            container.appendChild(sw);
+        }
         function buildSwatches() {
             renameSwatches.innerHTML = "";
-            LABEL_COLORS.forEach(function (c) {
-                const sw = document.createElement("button");
-                sw.type = "button";
-                sw.className = "term-swatch";
-                sw.style.background = c;
-                sw.dataset.color = c;
-                sw.setAttribute("aria-label", "color " + c);
-                sw.addEventListener("click", function () {
-                    editSelectedColor = (editSelectedColor === c) ? "" : c;
-                    markSwatches();
-                });
-                renameSwatches.appendChild(sw);
+            LABEL_COLORS.forEach(function (c) { buildSwatch(renameSwatches, c); });
+            colorGridSwatches.innerHTML = "";
+            EXTRA_COLOR_ROWS.forEach(function (row) {
+                const rowEl = document.createElement("div");
+                rowEl.className = "term-color-grid-row";
+                row.forEach(function (c) { buildSwatch(rowEl, c); });
+                colorGridSwatches.appendChild(rowEl);
             });
         }
         function markSwatches() {
-            Array.from(renameSwatches.children).forEach(function (sw) {
+            el.querySelectorAll(".term-swatch[data-color]").forEach(function (sw) {
                 sw.classList.toggle("is-selected", sw.dataset.color === editSelectedColor);
             });
+            colorInput.value = /^#[0-9a-f]{6}$/i.test(editSelectedColor) ? editSelectedColor : "#4ee8fc";
         }
+        function closeColorGrid() {
+            colorGrid.hidden = true;
+            colorMoreBtn.setAttribute("aria-expanded", "false");
+        }
+        function openColorGrid() {
+            // position:fixed, placed here rather than in CSS -- term-panel
+            // clips overflow for the xterm canvas, which would otherwise
+            // chop off anything anchored with plain absolute positioning
+            const r = colorMoreBtn.getBoundingClientRect();
+            colorGrid.style.left = r.left + "px";
+            colorGrid.style.top = (r.bottom + 4) + "px";
+            colorGrid.hidden = false;
+            colorMoreBtn.setAttribute("aria-expanded", "true");
+        }
+        colorMoreBtn.addEventListener("click", function () {
+            if (colorGrid.hidden) openColorGrid(); else closeColorGrid();
+        });
+        colorInput.addEventListener("input", function () {
+            editSelectedColor = colorInput.value;
+            markSwatches();
+        });
         function openRename() {
             const label = getLabel(sessionId);
             renameInput.value = label.name || "";
             editSelectedColor = label.color || "";
             markSwatches();
+            closeColorGrid();
             renamePop.hidden = false;
             renameInput.focus();
             renameInput.select();
         }
-        function closeRename() { renamePop.hidden = true; }
+        function closeRename() { renamePop.hidden = true; closeColorGrid(); }
         function commitRename() {
             setLabel(sessionId, {name: renameInput.value.trim(), color: editSelectedColor});
             closeRename();
@@ -500,8 +576,8 @@
                 helperTa.value = "";
             }
         }, true);
-        term.textarea && term.textarea.addEventListener("focus", function () { focusedPanel = panel; });
-        el.addEventListener("mousedown", function () { focusedPanel = panel; });
+        term.textarea && term.textarea.addEventListener("focus", function () { setFocusedPanel(panel); });
+        el.addEventListener("mousedown", function () { setFocusedPanel(panel); });
 
         // ── rotation reattach ─────────────────────────────────────
         function cancelReattachLoop() {
@@ -603,7 +679,7 @@
                 attach();
             },
             fit: doFit,
-            focus: function () { focusedPanel = panel; term.focus(); },
+            focus: function () { setFocusedPanel(panel); term.focus(); },
             refreshLabel: applyLabel,
             sendBytes: function (text) {
                 if (ws && ws.readyState === WebSocket.OPEN) {
