@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The module is a browser script, not an ES module — evaluate it the way a
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
-const {pickReattachTarget, isActive} = globalThis.TerminalRouting;
+const {pickReattachTarget, isActive, retryDelayMs} = globalThis.TerminalRouting;
 
 const tests = {
     "a live session is retried, not replaced"() {
@@ -91,6 +91,18 @@ const tests = {
         assert.equal(pickReattachTarget(null, {deadId: "a", openIds: []}).action, "wait");
         assert.equal(pickReattachTarget([{id: "a", status: "running"}], {}).action, "wait");
         assert.equal(pickReattachTarget([null, undefined], {deadId: "a"}).action, "wait");
+    },
+
+    "retries back off and cap instead of spinning"() {
+        assert.equal(retryDelayMs(1), 500);
+        assert.equal(retryDelayMs(2), 1000);
+        assert.equal(retryDelayMs(3), 2000);
+        // A mind that refuses every handshake must settle at the cap, not
+        // keep reconnecting several times a second.
+        assert.equal(retryDelayMs(20), 8000);
+        // Garbage in still yields a real wait.
+        assert.equal(retryDelayMs(0), 500);
+        assert.equal(retryDelayMs(undefined), 500);
     },
 
     "isActive classifies the statuses the rail renders"() {
