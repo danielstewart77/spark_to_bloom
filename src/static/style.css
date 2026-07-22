@@ -1147,12 +1147,27 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 }
 .term-xterm .xterm { height: 100%; }
 
-/* xterm's own composition-view (the floating IME preview bubble, used
-   heavily by mobile soft keyboards) ships with white-space: nowrap and no
-   width cap -- on a narrow phone it runs off the right edge instead of
-   wrapping. Override with higher specificity than xterm.css's
-   .xterm .composition-view since load order alone can't be relied on. */
+/* xterm's own composition-view (the floating IME preview bubble that mobile
+   soft keyboards and voice typing paint into) ships with white-space: nowrap
+   and no width cap, so on a narrow phone it runs off the right edge instead
+   of wrapping. Wrapping it needs a real width to wrap AT, and it has none by
+   default: the bubble lives in .xterm-helpers, which xterm leaves at zero
+   width because every child of it is absolutely positioned, and it is itself
+   absolutely positioned at the cursor's x offset. So a percentage cap
+   resolves against nothing and shrink-to-fit gets only the sliver of space
+   to the right of the cursor -- which is how voice typing came out as one
+   character per line running straight down the tile.
+
+   Stretch the helper layer to the terminal's width so percentages mean
+   something, and pin the bubble to its left edge (xterm writes `left` inline
+   on every composition update, hence !important) so it wraps at the tile
+   rather than at whatever room the cursor happened to leave. */
+.term-panel .xterm .xterm-helpers {
+    left: 0;
+    right: 0;
+}
 .term-panel .xterm .composition-view {
+    left: 0.5rem !important;
     max-width: calc(100% - 1rem);
     white-space: pre-wrap;
     word-break: break-word;
