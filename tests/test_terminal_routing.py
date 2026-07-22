@@ -169,3 +169,24 @@ def test_terminal_refits_on_container_resize_not_just_window_resize():
     # leaving it would be redundant dead weight now that each panel fits
     # itself.
     assert 'window.addEventListener("resize"' not in body
+
+
+def test_terminal_has_redundant_refit_signals_for_foldables():
+    """ResizeObserver alone was verified (in a headless Chromium run
+    against the real production page, both mount-then-widen and
+    already-wide-then-mount) to refit correctly, but a foldable unfolding
+    is reported to still leave the terminal at a stale narrower width on
+    some real mobile browser that a Chromium run doesn't reproduce. Since
+    the failing signal can't be pinned down without the device, refitting
+    must not depend on any single browser event: visualViewport resize,
+    orientationchange, and a periodic self-check are independent
+    fallbacks alongside the per-panel ResizeObserver."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert "window.visualViewport.addEventListener(\"resize\"" in body
+    assert 'window.addEventListener("orientationchange"' in body
+    assert "setInterval(refitAllPanels" in body
