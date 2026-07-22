@@ -16,6 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
     pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, pageScrollLines,
+    pageScrollAction, wheelReport, dragWheelSteps,
 } = globalThis.TerminalRouting;
 
 const tests = {
@@ -176,6 +177,50 @@ const tests = {
         // length and so must this.
         const state = {composing: true, flushPending: false, start: 6, alreadySent: "wo"};
         assert.equal(pendingImeText(state, "hello world"), "rld");
+    },
+
+    "on the alternate buffer a page of scrolling is the program's to do"() {
+        // The whole bug: xterm's scrollback does not exist on the alt
+        // buffer, so scrolling it locally moved nothing at all.
+        assert.deepEqual(
+            pageScrollAction({altBuffer: true, rows: 27, dir: -1}),
+            {kind: "bytes", data: "\x1b[5~"},
+        );
+        assert.deepEqual(
+            pageScrollAction({altBuffer: true, rows: 27, dir: 1}),
+            {kind: "bytes", data: "\x1b[6~"},
+        );
+    },
+
+    "on the normal buffer the tile scrolls its own scrollback"() {
+        assert.deepEqual(
+            pageScrollAction({altBuffer: false, rows: 27, dir: -1}),
+            {kind: "lines", lines: -25},
+        );
+        assert.deepEqual(
+            pageScrollAction({altBuffer: false, rows: 27, dir: 1}),
+            {kind: "lines", lines: 25},
+        );
+    },
+
+    "a wheel notch is an SGR report the TUI already listens for"() {
+        assert.equal(wheelReport(-1, 12, 5), "\x1b[<64;12;5M");
+        assert.equal(wheelReport(1, 12, 5), "\x1b[<65;12;5M");
+        // Cells are 1-based; a pointer measured off the top-left edge
+        // must not report a zeroth column.
+        assert.equal(wheelReport(-1, 0, -3), "\x1b[<64;1;1M");
+    },
+
+    "a finger moving down pulls older lines into view"() {
+        assert.deepEqual(dragWheelSteps(60, 24), {steps: 2, dir: -1, consumed: 48});
+        assert.deepEqual(dragWheelSteps(-60, 24), {steps: 2, dir: 1, consumed: -48});
+    },
+
+    "drag distance short of a notch is carried, not lost"() {
+        // Slow drags are all short moves; discarding each one would make
+        // the tile ignore the gesture entirely.
+        assert.deepEqual(dragWheelSteps(20, 24), {steps: 0, dir: 1, consumed: 0});
+        assert.equal(dragWheelSteps(0, 24).steps, 0);
     },
 
     "an empty or exhausted box owes nothing"() {

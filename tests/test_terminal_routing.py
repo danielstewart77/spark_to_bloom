@@ -237,9 +237,10 @@ def test_terminal_has_redundant_refit_signals_for_foldables():
 def test_mobile_toolbar_can_reach_the_tiles_scrollback():
     """A phone has no visible scrollbar and no PageUp key. Without deliberate
     controls a reply taller than the screen is simply cut off, which is how
-    a whole answer became unreadable on mobile. The controls must move the
-    viewport, never send key bytes -- PageUp down the wire is something the
-    TUI acts on, not something that scrolls."""
+    a whole answer became unreadable on mobile. Where the scrolling has to
+    happen depends on the buffer -- a TUI on the alternate screen holds its
+    own history and only it can move it, so the panel routes through
+    pageScrollAction rather than always moving the local viewport."""
     template = os.path.join(
         os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
     )
@@ -248,11 +249,11 @@ def test_mobile_toolbar_can_reach_the_tiles_scrollback():
 
     assert 'data-scroll="-1"' in body and 'data-scroll="1"' in body
     assert "target.scrollPage(Number(btn.dataset.scroll));" in body
-    # The scroll buttons must not be reachable as byte-sending keys.
+    # The scroll buttons route through scrollPage, not the byte-sending key path.
     idx = body.index('toolbar.addEventListener("click"')
     handler = body[idx : idx + 900]
     assert handler.index("dataset.scroll") < handler.index("sendBytes")
-    assert "TerminalRouting.pageScrollLines(term.rows)" in body
+    assert "TerminalRouting.pageScrollAction(" in body
 
     css_path = os.path.join(
         os.path.dirname(__file__), "..", "src", "static", "style.css"

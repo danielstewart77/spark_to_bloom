@@ -140,8 +140,71 @@
         return Math.max(1, n - 2);
     }
 
+    /**
+     * Where a page of scrolling has to be done: here, or by the program.
+     *
+     * Claude's TUI takes the alternate screen buffer the moment it starts
+     * (ESC[?1049h) and turns on SGR mouse reporting. An alternate buffer
+     * has no scrollback by definition — xterm's own scrollLines has
+     * nothing to move and the viewport has no overflow to drag — so the
+     * conversation history the reader wants is inside the program's own
+     * scroll region, and only the program can move it. Sending the page
+     * keys down the wire is the fix, not the hazard: acting on them is
+     * precisely what is wanted. On the normal buffer the tile owns the
+     * scrollback and scrolls it locally, without disturbing the program.
+     *
+     * @param {Object} state  {altBuffer: boolean, rows: number, dir: -1|1}
+     * @returns {{kind: "bytes", data: string}|{kind: "lines", lines: number}}
+     */
+    function pageScrollAction(state) {
+        var dir = Number(state && state.dir) < 0 ? -1 : 1;
+        if (state && state.altBuffer) {
+            return {kind: "bytes", data: dir < 0 ? "\x1b[5~" : "\x1b[6~"};
+        }
+        return {kind: "lines", lines: dir * pageScrollLines(state && state.rows)};
+    }
+
+    /**
+     * One wheel notch as an SGR (1006) mouse report.
+     *
+     * Buttons 64 and 65 are wheel-up and wheel-down; the TUI enabled this
+     * encoding itself, so it is the channel it already listens on.
+     *
+     * @param {-1|1} dir      -1 scrolls back through history, 1 forward
+     * @param {number} col    1-based cell column of the pointer
+     * @param {number} row    1-based cell row of the pointer
+     */
+    function wheelReport(dir, col, row) {
+        var button = Number(dir) < 0 ? 64 : 65;
+        var x = Math.max(1, Math.floor(Number(col) || 1));
+        var y = Math.max(1, Math.floor(Number(row) || 1));
+        return "\x1b[<" + button + ";" + x + ";" + y + "M";
+    }
+
+    /**
+     * A touch drag, in wheel notches.
+     *
+     * A phone has no wheel and, on the alternate buffer, nothing for the
+     * browser to pan either, so a drag has to be converted by hand. A
+     * finger moving down pulls older lines into view, which is a wheel-up
+     * notch. Whatever distance doesn't fill a whole notch is returned so
+     * the caller can carry it into the next move rather than losing it.
+     *
+     * @param {number} deltaY         pixels moved since the last report
+     * @param {number} pixelsPerStep  drag distance one notch is worth
+     * @returns {{steps: number, dir: -1|1, consumed: number}}
+     */
+    function dragWheelSteps(deltaY, pixelsPerStep) {
+        var step = Math.abs(Number(pixelsPerStep)) || 24;
+        var n = Math.trunc((Number(deltaY) || 0) / step);
+        return {steps: Math.abs(n), dir: n > 0 ? -1 : 1, consumed: n * step};
+    }
+
     root.TerminalRouting = {
         pageScrollLines: pageScrollLines,
+        pageScrollAction: pageScrollAction,
+        wheelReport: wheelReport,
+        dragWheelSteps: dragWheelSteps,
         pickReattachTarget: pickReattachTarget,
         isActive: isActive,
         retryDelayMs: retryDelayMs,
