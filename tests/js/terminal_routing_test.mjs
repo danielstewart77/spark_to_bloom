@@ -14,7 +14,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The module is a browser script, not an ES module — evaluate it the way a
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
-const {pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText} = globalThis.TerminalRouting;
+const {
+    pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, pageScrollLines,
+} = globalThis.TerminalRouting;
 
 const tests = {
     "a live session is retried, not replaced"() {
@@ -132,6 +134,19 @@ const tests = {
         assert.equal(isActive({status: "closed"}), false);
         assert.equal(isActive({}), false);
         assert.equal(isActive(null), false);
+    },
+
+    "a page of scrollback keeps two rows of overlap"() {
+        assert.equal(pageScrollLines(24), 22);
+        assert.equal(pageScrollLines(40.7), 38);
+    },
+
+    "a tile too short to overlap still moves"() {
+        // Never 0: a button that does nothing reads as a broken terminal.
+        assert.equal(pageScrollLines(2), 1);
+        assert.equal(pageScrollLines(1), 1);
+        assert.equal(pageScrollLines(0), 1);
+        assert.equal(pageScrollLines(undefined), 1);
     },
 
     "a settled IME box owes nothing to Enter"() {

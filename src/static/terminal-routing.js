@@ -125,7 +125,23 @@
         return text.slice(start);
     }
 
+    /**
+     * How far one press of the tile's PgUp/PgDn moves the viewport.
+     *
+     * A whole screen at a time loses the reader's place, so two rows of
+     * overlap carry over. A tile too short for that still has to move by
+     * something, hence the floor of one.
+     *
+     * @param {number} rows  the terminal's current row count
+     * @returns {number} lines to scroll, always at least 1
+     */
+    function pageScrollLines(rows) {
+        var n = Math.floor(Number(rows)) || 0;
+        return Math.max(1, n - 2);
+    }
+
     root.TerminalRouting = {
+        pageScrollLines: pageScrollLines,
         pickReattachTarget: pickReattachTarget,
         isActive: isActive,
         retryDelayMs: retryDelayMs,

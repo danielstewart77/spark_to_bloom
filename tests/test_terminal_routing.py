@@ -12,6 +12,7 @@ exercised by ``tests/js/terminal_routing_test.mjs``, run here so one
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -231,3 +232,42 @@ def test_terminal_has_redundant_refit_signals_for_foldables():
     assert "window.visualViewport.addEventListener(\"resize\"" in body
     assert 'window.addEventListener("orientationchange"' in body
     assert "setInterval(refitAllPanels" in body
+
+
+def test_mobile_toolbar_can_reach_the_tiles_scrollback():
+    """A phone has no visible scrollbar and no PageUp key. Without deliberate
+    controls a reply taller than the screen is simply cut off, which is how
+    a whole answer became unreadable on mobile. The controls must move the
+    viewport, never send key bytes -- PageUp down the wire is something the
+    TUI acts on, not something that scrolls."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert 'data-scroll="-1"' in body and 'data-scroll="1"' in body
+    assert "target.scrollPage(Number(btn.dataset.scroll));" in body
+    # The scroll buttons must not be reachable as byte-sending keys.
+    idx = body.index('toolbar.addEventListener("click"')
+    handler = body[idx : idx + 900]
+    assert handler.index("dataset.scroll") < handler.index("sendBytes")
+    assert "TerminalRouting.pageScrollLines(term.rows)" in body
+
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        css = fh.read()
+
+    # Ten keys over five columns; four would strand two on a half row.
+    assert re.search(
+        r"\.term-mobile-toolbar\s*\{[^}]*grid-template-columns:\s*repeat\(5,", css
+    )
+    # A vertical drag scrolls the terminal instead of rubber-banding the page.
+    viewport = re.search(
+        r"\.term-panel \.xterm \.xterm-viewport\s*\{([^}]*)\}", css
+    )
+    assert viewport, "no viewport rule"
+    assert "touch-action: pan-y" in viewport.group(1)
+    assert "overscroll-behavior: contain" in viewport.group(1)
