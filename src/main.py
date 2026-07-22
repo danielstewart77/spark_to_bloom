@@ -253,16 +253,26 @@ def _render_hive_init_home(request: Request) -> HTMLResponse:
     return HTMLResponse(body)
 
 
+def _asset_versions() -> dict[str, int]:
+    """Cache-busting stamp for every first-party static file.
+
+    Enumerated rather than enumerated-by-hand: a hardcoded list silently
+    stops covering the next asset someone adds, which is how a stale
+    terminal-routing.js once outlived the terminal.html that called into
+    it. Only the top level of static/ — vendor/ is pinned third-party and
+    images are content-addressed by name.
+    """
+    static_dir = BASE_DIR / "static"
+    return {
+        path.name: int(path.stat().st_mtime_ns)
+        for path in static_dir.iterdir()
+        if path.is_file()
+    }
+
+
 def _render_template(request: Request, template_name: str, **context) -> HTMLResponse:
     context.setdefault("current_user", get_current_user_from_request(request))
-    static_dir = BASE_DIR / "static"
-    context.setdefault(
-        "asset_versions",
-        {
-            "style.css": int((static_dir / "style.css").stat().st_mtime_ns),
-            "scripts.js": int((static_dir / "scripts.js").stat().st_mtime_ns),
-        },
-    )
+    context.setdefault("asset_versions", _asset_versions())
     context["request"] = request
     return templates.TemplateResponse(request, template_name, context)
 

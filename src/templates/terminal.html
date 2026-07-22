@@ -45,7 +45,7 @@
 
 <script src="{{ request.url_for('static', path='vendor/xterm/xterm.js') }}"></script>
 <script src="{{ request.url_for('static', path='vendor/xterm/addon-fit.js') }}"></script>
-<script src="{{ request.url_for('static', path='terminal-routing.js') }}"></script>
+<script src="{{ request.url_for('static', path='terminal-routing.js') }}?v={{ asset_versions['terminal-routing.js'] }}"></script>
 <script>
 (function () {
     "use strict";
