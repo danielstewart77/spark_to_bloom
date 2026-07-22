@@ -1186,6 +1186,23 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
     word-break: break-word;
 }
 
+/* The hidden textarea has to be pinned for the same reason, and it is the
+   wrap above that makes it urgent. While a composition is open xterm parks
+   the textarea just past the bubble and gives it the bubble's width, so a
+   bubble as wide as the tile puts a focused element a whole tile-width off
+   the right edge. Nothing clips it -- the tile only has overflow: hidden,
+   which is scrollable, so the browser scrolls the terminal sideways to keep
+   the thing it thinks you are editing in view, and the content marches left
+   as you dictate. Held at the origin at one pixel wide, composition can't
+   move it and there is no overflow to chase. It is invisible either way
+   (opacity 0, z-index -5); the only cost is that a desktop IME candidate
+   window opens at the tile's corner rather than at the cursor. */
+.term-panel .xterm .xterm-helper-textarea {
+    left: 0 !important;
+    width: 1px !important;
+    max-width: 1px !important;
+}
+
 /* ── new-session mind picker ──────────────────────────── */
 .term-new-menu {
     display: flex;
