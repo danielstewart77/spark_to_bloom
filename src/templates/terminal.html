@@ -544,12 +544,48 @@
             socket.onerror = () => setAttachState("connection error");
             ws = socket;
         }
-        term.onData(function (text) {
+        function sendRaw(text) {
             if (!text) return;
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(new TextEncoder().encode(text));
             }
-        });
+        }
+        function isAltBuffer() {
+            const buf = term.buffer && term.buffer.active;
+            return !!buf && buf.type === "alternate";
+        }
+        term.onData(sendRaw);
+
+        // Scrolling by finger. On the alternate buffer — which is where
+        // the TUI lives, and so the only buffer this tile ever really
+        // shows — the viewport has no overflow, so the browser has
+        // nothing to pan and a drag does nothing at all. Translate it
+        // into the wheel reports the program turned on for itself.
+        let dragY = null;
+        let dragCell = {col: 1, row: 1};
+        xtermEl.addEventListener("touchstart", function (e) {
+            if (e.touches.length !== 1 || !isAltBuffer()) { dragY = null; return; }
+            const t = e.touches[0];
+            const box = xtermEl.getBoundingClientRect();
+            dragCell = {
+                col: Math.floor((t.clientX - box.left) / (box.width / term.cols)) + 1,
+                row: Math.floor((t.clientY - box.top) / (box.height / term.rows)) + 1,
+            };
+            dragY = t.clientY;
+        }, {passive: true});
+        xtermEl.addEventListener("touchmove", function (e) {
+            if (dragY === null || e.touches.length !== 1) return;
+            const t = e.touches[0];
+            const move = TerminalRouting.dragWheelSteps(t.clientY - dragY, 24);
+            if (!move.steps) return;
+            e.preventDefault();
+            dragY += move.consumed;
+            for (let i = 0; i < move.steps; i++) {
+                sendRaw(TerminalRouting.wheelReport(move.dir, dragCell.col, dragCell.row));
+            }
+        }, {passive: false});
+        xtermEl.addEventListener("touchend", function () { dragY = null; });
+        xtermEl.addEventListener("touchcancel", function () { dragY = null; });
         // Mobile virtual keyboards (Gboard, iOS predictive text) route typed
         // words through an IME composition that isn't closed before Enter
         // fires; xterm.js then discards the still-open composition instead
@@ -702,7 +738,11 @@
             focus: function () { setFocusedPanel(panel); term.focus(); },
             refreshLabel: applyLabel,
             scrollPage: function (dir) {
-                term.scrollLines(dir * TerminalRouting.pageScrollLines(term.rows));
+                const action = TerminalRouting.pageScrollAction({
+                    altBuffer: isAltBuffer(), rows: term.rows, dir: dir,
+                });
+                if (action.kind === "bytes") sendRaw(action.data);
+                else term.scrollLines(action.lines);
             },
             sendBytes: function (text) {
                 // The toolbar's return key never reaches xterm's keydown
@@ -711,9 +751,7 @@
                 // prompt. Same debt as the hardware Enter, paid the same
                 // way.
                 if (text === "\r") flushPendingIme();
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(new TextEncoder().encode(text));
-                }
+                sendRaw(text);
             },
             destroy: function () {
                 destroyed = true;
@@ -986,11 +1024,10 @@
         if (!btn) return;
         const target = focusedPanel || openPanels.values().next().value;
         if (!target) return;
-        // Scrollback is a property of the tile, not of the pty: a phone has
-        // no visible scrollbar and no PageUp key, so a reply taller than the
-        // screen had nothing to reach the rest of it with. These move the
-        // viewport; they must never go down the wire as key bytes, which the
-        // TUI would act on instead.
+        // A phone has no visible scrollbar and no PageUp key, so a reply
+        // taller than the screen had nothing to reach the rest of it with.
+        // Where that scrolling happens depends on which buffer is up —
+        // see TerminalRouting.pageScrollAction — so the panel decides.
         if (btn.dataset.scroll) {
             target.scrollPage(Number(btn.dataset.scroll));
             return;

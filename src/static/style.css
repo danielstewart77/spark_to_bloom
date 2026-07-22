@@ -1147,13 +1147,14 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 }
 .term-xterm .xterm { height: 100%; }
 
-/* A phone has no visible scrollbar and no PageUp key, so the tile's
-   scrollback was unreachable by anything but a drag: a reply taller than
-   the screen was simply cut off with no way to read the rest. The toolbar
-   carries the deliberate controls; this keeps the drag itself honest, so a
-   vertical pan scrolls the terminal rather than rubber-banding the page,
-   and a pan that runs out of scrollback stops there instead of chaining
-   outward. */
+/* A phone has no visible scrollbar and no PageUp key, so a reply taller
+   than the screen was simply cut off with no way to read the rest. The
+   toolbar carries the deliberate controls and the tile converts drags
+   into wheel reports (the TUI holds the history, not the viewport — see
+   TerminalRouting.pageScrollAction). This keeps whatever the browser does
+   handle from working against that: a vertical pan belongs to the
+   terminal rather than rubber-banding the page, and it stops at the end
+   of the buffer instead of chaining outward. */
 .term-panel .xterm .xterm-viewport {
     touch-action: pan-y;
     overscroll-behavior: contain;
