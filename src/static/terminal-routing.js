@@ -91,10 +91,45 @@
         return lum > 0.6 ? "#0b1724" : "#f4f8fb";
     }
 
+    /**
+     * The slice of xterm's helper textarea that Enter has to forward by
+     * hand, given xterm's own composition state.
+     *
+     * Mobile keyboards type into that textarea through IME compositions,
+     * and xterm does not clear it between words — it holds the whole line
+     * and each composition is sent as it ends, from its own start offset
+     * to the end of the box. So by the time Enter arrives, everything up
+     * to the open composition's start is already down the wire. Forwarding
+     * the whole box (the first cut of the mobile-Enter fix) resends the
+     * entire paragraph and the pty shows it twice.
+     *
+     * Nothing is owed when no composition is open or in flight: xterm has
+     * already sent it all. When one is, xterm is about to either drop it
+     * (Enter finalizes with commit=false) or slice it against a stale end
+     * offset, so this is the text that would otherwise be lost.
+     *
+     * @param {Object} state  xterm's composition state:
+     *                        {composing, flushPending, start, alreadySent}
+     * @param {string} value  the helper textarea's current value
+     * @returns {string} the text to send before the carriage return
+     */
+    function pendingImeText(state, value) {
+        var text = String(value == null ? "" : value);
+        if (!state || !text) return "";
+        if (!state.composing && !state.flushPending) return "";
+        // Text the non-composition path sent after the composition
+        // recorded its start offset sits between the two; xterm applies
+        // the same correction when it flushes.
+        var start = (state.start || 0) + String(state.alreadySent || "").length;
+        if (!(start >= 0) || start >= text.length) return "";
+        return text.slice(start);
+    }
+
     root.TerminalRouting = {
         pickReattachTarget: pickReattachTarget,
         isActive: isActive,
         retryDelayMs: retryDelayMs,
         contrastText: contrastText,
+        pendingImeText: pendingImeText,
     };
 })(typeof globalThis !== "undefined" ? globalThis : this);
