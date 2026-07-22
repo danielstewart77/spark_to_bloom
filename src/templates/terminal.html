@@ -35,11 +35,13 @@
         <button type="button" data-seq="&#x1b;">Esc</button>
         <button type="button" data-seq="&#x09;">Tab</button>
         <button type="button" data-seq="&#x03;">Ctrl+C</button>
-        <button type="button" data-seq="&#x0d;">&crarr;</button>
+        <button type="button" data-scroll="-1" aria-label="scroll back a page">PgUp</button>
+        <button type="button" data-scroll="1" aria-label="scroll forward a page">PgDn</button>
         <button type="button" data-seq="&#x1b;[D">&larr;</button>
         <button type="button" data-seq="&#x1b;[A">&uarr;</button>
         <button type="button" data-seq="&#x1b;[B">&darr;</button>
         <button type="button" data-seq="&#x1b;[C">&rarr;</button>
+        <button type="button" data-seq="&#x0d;">&crarr;</button>
     </div>
 </main>
 
@@ -699,6 +701,9 @@
             fit: doFit,
             focus: function () { setFocusedPanel(panel); term.focus(); },
             refreshLabel: applyLabel,
+            scrollPage: function (dir) {
+                term.scrollLines(dir * TerminalRouting.pageScrollLines(term.rows));
+            },
             sendBytes: function (text) {
                 // The toolbar's return key never reaches xterm's keydown
                 // path, so an open composition would sit in the helper
@@ -977,10 +982,20 @@
 
     // ── mobile key toolbar (routes to the focused tile) ───────────
     toolbar.addEventListener("click", function (ev) {
-        const btn = ev.target.closest("button[data-seq]");
+        const btn = ev.target.closest("button[data-seq], button[data-scroll]");
         if (!btn) return;
         const target = focusedPanel || openPanels.values().next().value;
-        if (target) target.sendBytes(btn.dataset.seq);
+        if (!target) return;
+        // Scrollback is a property of the tile, not of the pty: a phone has
+        // no visible scrollbar and no PageUp key, so a reply taller than the
+        // screen had nothing to reach the rest of it with. These move the
+        // viewport; they must never go down the wire as key bytes, which the
+        // TUI would act on instead.
+        if (btn.dataset.scroll) {
+            target.scrollPage(Number(btn.dataset.scroll));
+            return;
+        }
+        target.sendBytes(btn.dataset.seq);
     });
 
     // ── boot ──────────────────────────────────────────────────────

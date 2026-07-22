@@ -1147,6 +1147,19 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 }
 .term-xterm .xterm { height: 100%; }
 
+/* A phone has no visible scrollbar and no PageUp key, so the tile's
+   scrollback was unreachable by anything but a drag: a reply taller than
+   the screen was simply cut off with no way to read the rest. The toolbar
+   carries the deliberate controls; this keeps the drag itself honest, so a
+   vertical pan scrolls the terminal rather than rubber-banding the page,
+   and a pan that runs out of scrollback stops there instead of chaining
+   outward. */
+.term-panel .xterm .xterm-viewport {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
 /* xterm's own composition-view (the floating IME preview bubble that mobile
    soft keyboards and voice typing paint into) ships with white-space: nowrap
    and no width cap, so on a narrow phone it runs off the right edge instead
@@ -1236,7 +1249,7 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 /* ── mobile key toolbar ───────────────────────────────── */
 .term-mobile-toolbar {
     display: none;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.4rem;
     padding: 0.4rem 0.5rem;
     background: #0b1724;
