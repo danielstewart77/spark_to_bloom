@@ -148,3 +148,24 @@ def test_composition_view_wraps_on_mobile():
 
     assert ".composition-view" in body
     assert "pre-wrap" in body
+
+
+def test_terminal_refits_on_container_resize_not_just_window_resize():
+    """A window "resize" event alone misses layout changes that don't
+    resize the window itself -- a foldable unfolding, an on-screen keyboard
+    opening. Each panel must watch its own tile's box via ResizeObserver so
+    xterm's cols/rows actually grow when the tile does, instead of staying
+    pinned to whatever size it was at mount."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert "new ResizeObserver(scheduleFit)" in body
+    assert "resizeObserver.observe(xtermEl)" in body
+    assert "resizeObserver.disconnect()" in body
+    # The old global-only trigger must be gone, not just supplemented --
+    # leaving it would be redundant dead weight now that each panel fits
+    # itself.
+    assert 'window.addEventListener("resize"' not in body

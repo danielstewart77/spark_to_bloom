@@ -219,6 +219,22 @@
         const fitAddon = new window.FitAddon.FitAddon();
         term.loadAddon(fitAddon);
 
+        // window's "resize" event alone misses layout changes that don't
+        // resize the window itself -- a foldable unfolding, an on-screen
+        // keyboard opening, or this tile's own container changing shape
+        // when the rail collapses. Watch the tile's actual box instead.
+        let fitRaf = null;
+        function scheduleFit() {
+            if (fitRaf) return;
+            fitRaf = requestAnimationFrame(function () { fitRaf = null; doFit(); });
+        }
+        const resizeObserver = new ResizeObserver(scheduleFit);
+        function doFit() {
+            const before = term.cols + "x" + term.rows;
+            try { fitAddon.fit(); } catch (e) {}
+            if (term.cols + "x" + term.rows !== before) sendResize();
+        }
+
         let ws = null;
         let destroyed = false;
         let deliberateClose = false;
@@ -582,14 +598,11 @@
             mount: function () {
                 term.open(xtermEl);
                 fitAddon.fit();
+                resizeObserver.observe(xtermEl);
                 applyLabel();
                 attach();
             },
-            fit: function () {
-                const before = term.cols + "x" + term.rows;
-                try { fitAddon.fit(); } catch (e) {}
-                if (term.cols + "x" + term.rows !== before) sendResize();
-            },
+            fit: doFit,
             focus: function () { focusedPanel = panel; term.focus(); },
             refreshLabel: applyLabel,
             sendBytes: function (text) {
@@ -599,6 +612,8 @@
             },
             destroy: function () {
                 destroyed = true;
+                resizeObserver.disconnect();
+                if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = null; }
                 cancelReattachLoop();
                 closeSocket();
                 closeTtsStream();
@@ -670,10 +685,10 @@
     }
 
     function showView(name) { termApp.dataset.view = name; }
-
-    window.addEventListener("resize", function () {
-        openPanels.forEach(function (p) { p.fit(); });
-    });
+    // No window-level resize listener: each panel's own ResizeObserver
+    // (see createPanel) reacts to that panel's actual box changing, which
+    // covers every case a window resize would have (and catches layout
+    // changes a window resize event doesn't reliably fire for).
 
     // ── session list rendering (flat rows grouped by mind) ────────
     function isActiveStatus(status) { return TerminalRouting.isActive({status: status}); }
