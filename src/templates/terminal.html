@@ -91,10 +91,25 @@
     }
 
     // ── open-set persistence (restore the grid across reloads) ─────
+    // The URL fragment is the primary record — it survives a refresh in a
+    // per-tab, shareable way and rides through the proxy untouched (see
+    // TerminalRouting.parseOpenFragment). localStorage stays as a warm
+    // cache and the pre-fragment migration source.
+    function writeOpenFragment(ids) {
+        const frag = TerminalRouting.formatOpenFragment(ids);
+        const url = location.pathname + location.search + frag;
+        try { history.replaceState(null, "", url); } catch (e) {}
+    }
     function saveOpenSet() {
-        try { localStorage.setItem("term-open", JSON.stringify(Array.from(openPanels.keys()))); } catch (e) {}
+        const ids = Array.from(openPanels.keys());
+        try { localStorage.setItem("term-open", JSON.stringify(ids)); } catch (e) {}
+        writeOpenFragment(ids);
     }
     function recalledOpenSet() {
+        // Fragment wins; fall back to the localStorage cache for a tab that
+        // was opened before the fragment existed.
+        const fromUrl = TerminalRouting.parseOpenFragment(location.hash);
+        if (fromUrl.length) return fromUrl;
         try { return JSON.parse(localStorage.getItem("term-open") || "[]") || []; } catch (e) { return []; }
     }
 
@@ -1043,21 +1058,26 @@
     showView("list");
     syncLabelsFromServer();
     refreshSessions().then(function (rows) {
-        // Desktop: reopen the previously-open grid (or fall back to the most
-        // recent active session so the stage isn't empty). Mobile lands on
-        // the list.
-        if (!isWide()) return;
         const active = (rows || []).filter(function (r) { return isActiveStatus(r.status); });
         const byId = {};
         active.forEach(function (r) { byId[r.id] = r; });
-        let opened = 0;
-        recalledOpenSet().forEach(function (id) {
-            const hit = byId[id];
-            if (!hit) return;
+        const wanted = recalledOpenSet().map(function (id) { return byId[id]; }).filter(Boolean);
+        // Mobile is single-panel: a refresh restores the one session the
+        // fragment names rather than dumping the user back on the list. No
+        // named session (or it went inactive) leaves the list showing.
+        if (!isWide()) {
+            if (wanted.length) {
+                const hit = wanted[0];
+                addPanel({id: hit.id, mind_id: hit.mind_id, mind_name: hit.mind_name, status: hit.status});
+            }
+            return;
+        }
+        // Desktop: reopen the whole recalled grid, or fall back to the most
+        // recent active session so the stage isn't empty on a first visit.
+        wanted.forEach(function (hit) {
             addPanel({id: hit.id, mind_id: hit.mind_id, mind_name: hit.mind_name, status: hit.status});
-            opened += 1;
         });
-        if (opened === 0 && active.length > 0) {
+        if (wanted.length === 0 && active.length > 0) {
             const first = active[0];
             addPanel({id: first.id, mind_id: first.mind_id, mind_name: first.mind_name, status: first.status});
         }

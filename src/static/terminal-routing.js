@@ -200,7 +200,48 @@
         return {steps: Math.abs(n), dir: n > 0 ? -1 : 1, consumed: n * step};
     }
 
+    /**
+     * The session ids named in a URL fragment, in order.
+     *
+     * The fragment is the shareable, per-tab record of what a tile is
+     * showing: `#s=id1,id2`. A fragment because it never reaches the
+     * server, so it rides through Cloudflare and the reverse proxy
+     * untouched and needs no route. Each browser tab carries its own, so
+     * two tabs restore independently with no coordination.
+     *
+     * @param {string} hash  location.hash, with or without the leading #
+     * @returns {string[]}   ids, empty on anything malformed
+     */
+    function parseOpenFragment(hash) {
+        try {
+            var m = /(?:^|[#&])s=([^&]*)/.exec(String(hash || ""));
+            if (!m) return [];
+            return decodeURIComponent(m[1])
+                .split(",")
+                .map(function (s) { return s.trim(); })
+                .filter(Boolean);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * The fragment string for a set of open session ids.
+     *
+     * Empty in, empty out — a tile-less stage carries no fragment rather
+     * than a bare `#s=`, so closing the last tile leaves a clean URL.
+     *
+     * @param {string[]} ids
+     * @returns {string}  e.g. "#s=a,b" or ""
+     */
+    function formatOpenFragment(ids) {
+        var list = (ids || []).filter(Boolean);
+        return list.length ? "#s=" + list.map(encodeURIComponent).join(",") : "";
+    }
+
     root.TerminalRouting = {
+        parseOpenFragment: parseOpenFragment,
+        formatOpenFragment: formatOpenFragment,
         pageScrollLines: pageScrollLines,
         pageScrollAction: pageScrollAction,
         wheelReport: wheelReport,

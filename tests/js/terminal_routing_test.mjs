@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
     pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, pageScrollLines,
-    pageScrollAction, wheelReport, dragWheelSteps,
+    pageScrollAction, wheelReport, dragWheelSteps, parseOpenFragment, formatOpenFragment,
 } = globalThis.TerminalRouting;
 
 const tests = {
@@ -221,6 +221,27 @@ const tests = {
         // the tile ignore the gesture entirely.
         assert.deepEqual(dragWheelSteps(20, 24), {steps: 0, dir: 1, consumed: 0});
         assert.equal(dragWheelSteps(0, 24).steps, 0);
+    },
+
+    "the open fragment round-trips a set of session ids"() {
+        assert.equal(formatOpenFragment(["a", "b"]), "#s=a,b");
+        assert.deepEqual(parseOpenFragment("#s=a,b"), ["a", "b"]);
+        assert.deepEqual(parseOpenFragment(formatOpenFragment(["one", "two"])), ["one", "two"]);
+    },
+
+    "an empty open set carries no fragment"() {
+        // A tile-less stage must leave a clean URL, not a bare #s=.
+        assert.equal(formatOpenFragment([]), "");
+        assert.equal(formatOpenFragment(["", null]), "");
+        assert.deepEqual(parseOpenFragment(""), []);
+        assert.deepEqual(parseOpenFragment("#"), []);
+        assert.deepEqual(parseOpenFragment("#other=1"), []);
+    },
+
+    "fragment parsing tolerates a leading hash or none, and stray commas"() {
+        assert.deepEqual(parseOpenFragment("s=a,b"), ["a", "b"]);
+        assert.deepEqual(parseOpenFragment("#s=a,,b, "), ["a", "b"]);
+        assert.deepEqual(parseOpenFragment(null), []);
     },
 
     "an empty or exhausted box owes nothing"() {
