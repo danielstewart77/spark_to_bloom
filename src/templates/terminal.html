@@ -685,10 +685,29 @@
     }
 
     function showView(name) { termApp.dataset.view = name; }
-    // No window-level resize listener: each panel's own ResizeObserver
-    // (see createPanel) reacts to that panel's actual box changing, which
-    // covers every case a window resize would have (and catches layout
-    // changes a window resize event doesn't reliably fire for).
+
+    // Each panel's own ResizeObserver (see createPanel) is the primary
+    // refit trigger, but a foldable unfolding is reported (not reproduced
+    // here in a headless Chromium run) to sometimes not resize a tile's
+    // box at all on some mobile browsers even though the physical screen
+    // -- and therefore the CSS viewport -- changed shape. visualViewport
+    // and orientationchange are independent browser signals for exactly
+    // that: a shape change that isn't a plain window resize. Redundant
+    // with the observer in a well-behaved browser; the point is not
+    // depending on any single one of the three firing.
+    function refitAllPanels() {
+        openPanels.forEach(function (p) { p.fit(); });
+    }
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", refitAllPanels);
+    }
+    window.addEventListener("orientationchange", refitAllPanels);
+    // Belt and suspenders: if none of the three signals above fire on a
+    // given browser, this puts a hard ceiling of a couple seconds on how
+    // long a tile can stay mis-sized rather than staying wrong forever.
+    // fit() is cheap (a character-metric measurement plus an int compare)
+    // and only sends a resize frame when the size actually changed.
+    setInterval(refitAllPanels, 2000);
 
     // ── session list rendering (flat rows grouped by mind) ────────
     function isActiveStatus(status) { return TerminalRouting.isActive({status: status}); }
