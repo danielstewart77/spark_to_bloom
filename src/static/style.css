@@ -1108,6 +1108,17 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
 }
 .term-xterm .xterm { height: 100%; }
 
+/* xterm's own composition-view (the floating IME preview bubble, used
+   heavily by mobile soft keyboards) ships with white-space: nowrap and no
+   width cap -- on a narrow phone it runs off the right edge instead of
+   wrapping. Override with higher specificity than xterm.css's
+   .xterm .composition-view since load order alone can't be relied on. */
+.term-panel .xterm .composition-view {
+    max-width: calc(100% - 1rem);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* ── new-session mind picker ──────────────────────────── */
 .term-new-menu {
     display: flex;

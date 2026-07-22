@@ -464,6 +464,26 @@
                 ws.send(new TextEncoder().encode(text));
             }
         });
+        // Mobile virtual keyboards (Gboard, iOS predictive text) route typed
+        // words through an IME composition that isn't closed before Enter
+        // fires; xterm.js then discards the still-open composition instead
+        // of sending it (CompositionHelper.keydown -> finalizeComposition
+        // with commit=false), so the whole line silently vanishes and only
+        // a bare return reaches the pty. Forward whatever's still buffered
+        // in the helper textarea ourselves, ahead of xterm's own handler --
+        // a capture-phase listener on this ancestor runs before any
+        // listener on the textarea itself, composing or not -- then let
+        // Enter continue through the normal path.
+        xtermEl.addEventListener("keydown", function (e) {
+            if (e.key !== "Enter" && e.keyCode !== 13) return;
+            const helperTa = xtermEl.querySelector(".xterm-helper-textarea");
+            if (helperTa && helperTa.value) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(new TextEncoder().encode(helperTa.value));
+                }
+                helperTa.value = "";
+            }
+        }, true);
         term.textarea && term.textarea.addEventListener("focus", function () { focusedPanel = panel; });
         el.addEventListener("mousedown", function () { focusedPanel = panel; });
 
