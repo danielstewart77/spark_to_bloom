@@ -35,8 +35,11 @@
         <button type="button" data-seq="&#x1b;">Esc</button>
         <button type="button" data-seq="&#x09;">Tab</button>
         <button type="button" data-seq="&#x03;">Ctrl+C</button>
+        <button type="button" data-seq="&#x0d;">&crarr;</button>
+        <button type="button" data-seq="&#x1b;[D">&larr;</button>
         <button type="button" data-seq="&#x1b;[A">&uarr;</button>
         <button type="button" data-seq="&#x1b;[B">&darr;</button>
+        <button type="button" data-seq="&#x1b;[C">&rarr;</button>
     </div>
 </main>
 
@@ -74,14 +77,7 @@
     const openPanels = new Map(); // sessionId -> panel
     let focusedPanel = null;
 
-    // readable text color against an arbitrary swatch background (perceived luminance)
-    function contrastText(hex) {
-        const c = (hex || "").replace("#", "");
-        if (c.length !== 6) return "#dce8f0";
-        const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
-        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        return lum > 0.6 ? "#0b1724" : "#f4f8fb";
-    }
+    const contrastText = TerminalRouting.contrastText;
     // only the focused tile paints its whole header bar; refresh both the
     // outgoing and incoming panel so the color follows focus, not just labels
     function setFocusedPanel(panel) {
@@ -105,7 +101,7 @@
     // across devices; localStorage is only a warm-start cache (and the
     // migration source for labels created before the server store).
     const LABEL_COLORS = ["#4ee8fc", "#4ee88a", "#c9a84c", "#e0724e", "#b06ee0", "#e05c8a", "#7e93a8"];
-    // the "more colors" pop-out grid, rows of saturated / muted / grayscale options
+    // further grid rows below the defaults: saturated / muted / grayscale
     const EXTRA_COLOR_ROWS = [
         ["#ff5c5c", "#ff8a3d", "#ffce42", "#c9e34e", "#5ce87a", "#3de0c0", "#3db6e8", "#5c8aff", "#9a5cff", "#e05cd0", "#ff5ca0"],
         ["#e0a8a8", "#e0c2a8", "#e0d8a8", "#c2e0a8", "#a8e0b8", "#a8d8e0", "#a8b8e0", "#c2a8e0", "#e0a8d8", "#e0a8b8", "#c9a8e0"],
@@ -210,21 +206,19 @@
                 '<button class="term-panel-close term-action-btn" type="button" title="remove from grid" aria-label="remove from grid">✕</button>' +
             '</header>' +
             '<div class="term-rename-pop" hidden>' +
-                '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
-                '<div class="term-color-picker">' +
-                    '<div class="term-rename-swatches" role="group" aria-label="session color"></div>' +
-                    '<button type="button" class="term-swatch term-swatch-more" aria-label="more colors" aria-expanded="false">+</button>' +
+                '<div class="term-rename-row">' +
+                    '<input type="text" class="term-rename-input" maxlength="40" placeholder="session name" aria-label="session name">' +
+                    '<div class="term-rename-actions">' +
+                        '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
+                        '<button type="button" class="term-action-btn term-rename-save">save</button>' +
+                    '</div>' +
                 '</div>' +
-                '<div class="term-color-grid" hidden role="group" aria-label="more colors">' +
+                '<div class="term-color-grid" role="group" aria-label="session color">' +
                     '<div class="term-color-grid-swatches"></div>' +
                     '<div class="term-color-grid-custom">' +
                         '<input type="color" class="term-color-input" aria-label="custom color">' +
                         '<span class="term-color-custom-label">custom</span>' +
                     '</div>' +
-                '</div>' +
-                '<div class="term-rename-actions">' +
-                    '<button type="button" class="term-action-btn term-rename-clear">clear</button>' +
-                    '<button type="button" class="term-action-btn term-rename-save">save</button>' +
                 '</div>' +
             '</div>' +
             '<div class="term-xterm"></div>';
@@ -240,12 +234,9 @@
         const renameBtn = el.querySelector(".term-panel-rename");
         const renamePop = el.querySelector(".term-rename-pop");
         const renameInput = el.querySelector(".term-rename-input");
-        const renameSwatches = el.querySelector(".term-rename-swatches");
         const renameSave = el.querySelector(".term-rename-save");
         const renameClear = el.querySelector(".term-rename-clear");
         const headDot = el.querySelector(".term-panel-dot");
-        const colorMoreBtn = el.querySelector(".term-swatch-more");
-        const colorGrid = el.querySelector(".term-color-grid");
         const colorGridSwatches = el.querySelector(".term-color-grid-swatches");
         const colorInput = el.querySelector(".term-color-input");
 
@@ -301,8 +292,9 @@
             setInfo();
             const color = label.color || "";
             el.style.borderLeft = color ? "3px solid " + color : "";
-            // the focused tile owns the full-bar treatment; everyone else
-            // keeps the thin left-edge indicator + header dot
+            // the focused tile paints its whole header bar so the selected
+            // terminal matches its painted card in the rail; unfocused
+            // tiles keep the thin left-edge indicator + header dot
             const isFocused = focusedPanel === panel;
             if (color && isFocused) {
                 const fg = contrastText(color);
@@ -331,10 +323,8 @@
             container.appendChild(sw);
         }
         function buildSwatches() {
-            renameSwatches.innerHTML = "";
-            LABEL_COLORS.forEach(function (c) { buildSwatch(renameSwatches, c); });
             colorGridSwatches.innerHTML = "";
-            EXTRA_COLOR_ROWS.forEach(function (row) {
+            [LABEL_COLORS].concat(EXTRA_COLOR_ROWS).forEach(function (row) {
                 const rowEl = document.createElement("div");
                 rowEl.className = "term-color-grid-row";
                 row.forEach(function (c) { buildSwatch(rowEl, c); });
@@ -347,23 +337,6 @@
             });
             colorInput.value = /^#[0-9a-f]{6}$/i.test(editSelectedColor) ? editSelectedColor : "#4ee8fc";
         }
-        function closeColorGrid() {
-            colorGrid.hidden = true;
-            colorMoreBtn.setAttribute("aria-expanded", "false");
-        }
-        function openColorGrid() {
-            // position:fixed, placed here rather than in CSS -- term-panel
-            // clips overflow for the xterm canvas, which would otherwise
-            // chop off anything anchored with plain absolute positioning
-            const r = colorMoreBtn.getBoundingClientRect();
-            colorGrid.style.left = r.left + "px";
-            colorGrid.style.top = (r.bottom + 4) + "px";
-            colorGrid.hidden = false;
-            colorMoreBtn.setAttribute("aria-expanded", "true");
-        }
-        colorMoreBtn.addEventListener("click", function () {
-            if (colorGrid.hidden) openColorGrid(); else closeColorGrid();
-        });
         colorInput.addEventListener("input", function () {
             editSelectedColor = colorInput.value;
             markSwatches();
@@ -373,12 +346,11 @@
             renameInput.value = label.name || "";
             editSelectedColor = label.color || "";
             markSwatches();
-            closeColorGrid();
             renamePop.hidden = false;
             renameInput.focus();
             renameInput.select();
         }
-        function closeRename() { renamePop.hidden = true; closeColorGrid(); }
+        function closeRename() { renamePop.hidden = true; }
         function commitRename() {
             setLabel(sessionId, {name: renameInput.value.trim(), color: editSelectedColor});
             closeRename();
@@ -819,12 +791,18 @@
                 card.type = "button";
                 card.className = "term-card" + (openPanels.has(s.id) ? " is-current" : "");
 
+                // the list is where color shouts: paint the whole card and
+                // flip the text to whichever pole stays readable on it
                 const label = getLabel(s.id);
-                if (label.color) card.style.borderLeft = "3px solid " + label.color;
+                if (label.color) {
+                    card.classList.add("is-colored");
+                    card.style.background = label.color;
+                    card.style.borderColor = label.color;
+                    card.style.color = contrastText(label.color);
+                }
 
                 const dot = document.createElement("span");
                 dot.className = "term-card-dot " + statusDotClass(s.status);
-                if (label.color) dot.style.background = label.color;
 
                 const body = document.createElement("span");
                 body.className = "term-card-body";

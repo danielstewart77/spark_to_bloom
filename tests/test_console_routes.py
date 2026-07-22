@@ -253,9 +253,11 @@ def test_terminal_page_renders_session_manager_shell(tmp_path, monkeypatch):
     # tile grid stage
     assert 'id="term-grid"' in body
     assert 'id="term-grid-empty"' in body
-    # per-session rename/recolor editor (JS-built panel markup)
+    # per-session rename/recolor editor (JS-built panel markup); the color
+    # grid is inline in the editor, always open — no pop-out button
     assert "term-rename-pop" in body
-    assert "term-rename-swatches" in body
+    assert "term-color-grid-swatches" in body
+    assert "term-swatch-more" not in body
     assert "term-labels" in body
     # TTS speaker wired to the console SSE stream + tts proxy
     assert "term-panel-speaker" in body

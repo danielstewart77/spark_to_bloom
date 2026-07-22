@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The module is a browser script, not an ES module — evaluate it the way a
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
-const {pickReattachTarget, isActive, retryDelayMs} = globalThis.TerminalRouting;
+const {pickReattachTarget, isActive, retryDelayMs, contrastText} = globalThis.TerminalRouting;
 
 const tests = {
     "a live session is retried, not replaced"() {
@@ -103,6 +103,27 @@ const tests = {
         // Garbage in still yields a real wait.
         assert.equal(retryDelayMs(0), 500);
         assert.equal(retryDelayMs(undefined), 500);
+    },
+
+    "contrastText picks dark ink on light session colors"() {
+        assert.equal(contrastText("#ffffff"), "#0b1724");
+        assert.equal(contrastText("#ffce42"), "#0b1724");
+        assert.equal(contrastText("#d8dee4"), "#0b1724");
+    },
+
+    "contrastText picks light ink on dark session colors"() {
+        assert.equal(contrastText("#0b1724"), "#f4f8fb");
+        assert.equal(contrastText("#e05c8a"), "#f4f8fb");
+        assert.equal(contrastText("#3d5266"), "#f4f8fb");
+    },
+
+    "contrastText falls back to the neutral ink on garbage"() {
+        // Painted headers and cards call this with whatever the label
+        // store holds — an empty label must not paint black-on-black.
+        assert.equal(contrastText(""), "#dce8f0");
+        assert.equal(contrastText(null), "#dce8f0");
+        assert.equal(contrastText("red"), "#dce8f0");
+        assert.equal(contrastText("#12345"), "#dce8f0");
     },
 
     "isActive classifies the statuses the rail renders"() {

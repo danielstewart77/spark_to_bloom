@@ -71,9 +71,30 @@
         return Math.min(500 * Math.pow(2, n - 1), 8000);
     }
 
+    /**
+     * Readable ink color against an arbitrary swatch background, by
+     * perceived luminance. Shared by the focused tile's full-bar header
+     * and the rail's painted picker cards, so both surfaces flip their
+     * text the same way for the same session color.
+     *
+     * @param {string} hex  "#rrggbb"
+     * @returns {string} a dark or light ink hex; a neutral default for
+     *                   anything that isn't a 6-digit hex color
+     */
+    function contrastText(hex) {
+        var c = String(hex || "").replace("#", "");
+        if (!/^[0-9a-fA-F]{6}$/.test(c)) return "#dce8f0";
+        var r = parseInt(c.slice(0, 2), 16);
+        var g = parseInt(c.slice(2, 4), 16);
+        var b = parseInt(c.slice(4, 6), 16);
+        var lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return lum > 0.6 ? "#0b1724" : "#f4f8fb";
+    }
+
     root.TerminalRouting = {
         pickReattachTarget: pickReattachTarget,
         isActive: isActive,
         retryDelayMs: retryDelayMs,
+        contrastText: contrastText,
     };
 })(typeof globalThis !== "undefined" ? globalThis : this);
