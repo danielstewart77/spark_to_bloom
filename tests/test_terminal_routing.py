@@ -112,3 +112,39 @@ def test_template_stops_retrying_a_mind_without_a_terminal():
     # back into attach().
     assert "TerminalRouting.retryDelayMs" in body
     assert "cancelReattachLoop(); attach(); return;" not in body
+
+
+def test_template_forwards_mobile_ime_text_before_enter():
+    """Mobile soft keyboards route typed words through an IME composition
+    that isn't closed before Enter fires; xterm.js discards that buffered
+    text instead of sending it, so the whole line silently vanishes. Guard
+    against the capture-phase forwarder (verified against the real vendored
+    xterm.js with a scripted CompositionEvent/InputEvent replay) regressing
+    or being dropped."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert "xterm-helper-textarea" in body
+    assert 'e.key !== "Enter" && e.keyCode !== 13' in body
+    # Must be capture-phase (the trailing `true`) on an ancestor of the
+    # textarea (xtermEl), not the textarea itself -- a same-element listener
+    # still runs after xterm's own, which is registered first.
+    idx = body.index('xtermEl.addEventListener("keydown"')
+    listener_call = body[idx : idx + 500]
+    assert "}, true);" in listener_call
+
+
+def test_composition_view_wraps_on_mobile():
+    """xterm's IME preview bubble ships with white-space: nowrap and no
+    width cap; on a phone it runs off the screen edge instead of wrapping."""
+    css_path = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "style.css"
+    )
+    with open(css_path, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert ".composition-view" in body
+    assert "pre-wrap" in body
