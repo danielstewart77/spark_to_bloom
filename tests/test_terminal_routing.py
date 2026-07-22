@@ -127,7 +127,6 @@ def test_template_forwards_mobile_ime_text_before_enter():
     with open(template, encoding="utf-8") as fh:
         body = fh.read()
 
-    assert "xterm-helper-textarea" in body
     assert 'e.key !== "Enter" && e.keyCode !== 13' in body
     # Must be capture-phase (the trailing `true`) on an ancestor of the
     # textarea (xtermEl), not the textarea itself -- a same-element listener
@@ -135,6 +134,48 @@ def test_template_forwards_mobile_ime_text_before_enter():
     idx = body.index('xtermEl.addEventListener("keydown"')
     listener_call = body[idx : idx + 500]
     assert "}, true);" in listener_call
+
+
+def test_enter_forwards_only_the_open_composition_not_the_whole_box():
+    """xterm never clears its helper textarea between words, so the box
+    holds the whole line while each composition has already gone to the pty
+    as it ended. The first cut of the Enter forwarder sent the box
+    wholesale, and the pty echoed the typed paragraph concatenated with a
+    copy of itself. Only the open composition is owed."""
+    template = os.path.join(
+        os.path.dirname(__file__), "..", "src", "templates", "terminal.html"
+    )
+    with open(template, encoding="utf-8") as fh:
+        body = fh.read()
+
+    assert "TerminalRouting.pendingImeText(" in body
+    # The whole value must never be what goes on the wire.
+    assert "encode(helperTa.value)" not in body
+    # The toolbar's return key bypasses xterm's keydown path entirely, so
+    # it has to settle the same debt.
+    assert 'if (text === "\\r") flushPendingIme();' in body
+
+
+def test_vendored_xterm_still_exposes_the_composition_state_we_read():
+    """`pendingImeText` is fed from xterm's own composition state rather
+    than a private guess at it. Those are internals: if xterm is
+    re-vendored and renames them, the terminal would silently go back to
+    swallowing every dictated line. Fail here instead, pointing at
+    `pendingImeText` in terminal.html."""
+    bundle = os.path.join(
+        os.path.dirname(__file__), "..", "src", "static", "vendor", "xterm", "xterm.js"
+    )
+    with open(bundle, encoding="utf-8") as fh:
+        body = fh.read()
+
+    for symbol in (
+        "_compositionHelper",
+        "_compositionPosition",
+        "_isComposing",
+        "_isSendingComposition",
+        "_dataAlreadySent",
+    ):
+        assert symbol in body, f"vendored xterm no longer has {symbol}"
 
 
 def test_composition_view_wraps_on_mobile():

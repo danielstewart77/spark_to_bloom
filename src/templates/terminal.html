@@ -543,6 +543,7 @@
             ws = socket;
         }
         term.onData(function (text) {
+            if (!text) return;
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(new TextEncoder().encode(text));
             }
@@ -552,22 +553,47 @@
         // fires; xterm.js then discards the still-open composition instead
         // of sending it (CompositionHelper.keydown -> finalizeComposition
         // with commit=false), so the whole line silently vanishes and only
-        // a bare return reaches the pty. Forward whatever's still buffered
-        // in the helper textarea ourselves, ahead of xterm's own handler --
-        // a capture-phase listener on this ancestor runs before any
-        // listener on the textarea itself, composing or not -- then let
-        // Enter continue through the normal path.
+        // a bare return reaches the pty.
+        //
+        // Only the open composition is owed, though. xterm never clears the
+        // helper textarea between words, so it holds the whole line, and
+        // every earlier word already went to the pty as its own composition
+        // ended. Forwarding the box wholesale sends the paragraph a second
+        // time -- which is what the pty then echoed, the typed text
+        // concatenated with a copy of itself.
+        function pendingImeText() {
+            const ta = term.textarea;
+            const helper = term._core && term._core._compositionHelper;
+            if (!ta || !helper) return "";
+            const pos = helper._compositionPosition || {};
+            return TerminalRouting.pendingImeText({
+                composing: helper._isComposing,
+                // A composition that has ended but whose flush is still on
+                // xterm's 0ms timer: Enter cancels that flush, so the text
+                // is ours to send.
+                flushPending: helper._isSendingComposition,
+                start: pos.start,
+                alreadySent: helper._dataAlreadySent,
+            }, ta.value);
+        }
+        // Emptying the box first leaves xterm's own finalize with nothing to
+        // re-send, so its Enter path runs untouched: composition state
+        // resets, the preview bubble closes, the carriage return goes out.
+        function flushPendingIme() {
+            const ta = term.textarea;
+            const pending = pendingImeText();
+            if (pending && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(new TextEncoder().encode(pending));
+            }
+            if (ta) ta.value = "";
+        }
+        // Capture-phase on this ancestor runs before any listener on the
+        // textarea itself, composing or not, so this lands ahead of xterm's
+        // own handler.
         xtermEl.addEventListener("keydown", function (e) {
             if (e.key !== "Enter" && e.keyCode !== 13) return;
-            const helperTa = xtermEl.querySelector(".xterm-helper-textarea");
-            if (helperTa && helperTa.value) {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(new TextEncoder().encode(helperTa.value));
-                }
-                helperTa.value = "";
-            }
+            flushPendingIme();
         }, true);
-        term.textarea && term.textarea.addEventListener("focus", function () { setFocusedPanel(panel); });
         el.addEventListener("mousedown", function () { setFocusedPanel(panel); });
 
         // ── rotation reattach ─────────────────────────────────────
@@ -664,6 +690,8 @@
             mindId: function () { return mindId; },
             mount: function () {
                 term.open(xtermEl);
+                // term.textarea only exists once xterm has opened.
+                term.textarea.addEventListener("focus", function () { setFocusedPanel(panel); });
                 resizeObserver.observe(xtermEl);
                 applyLabel();
                 fitWhenSized(attach);
@@ -672,6 +700,12 @@
             focus: function () { setFocusedPanel(panel); term.focus(); },
             refreshLabel: applyLabel,
             sendBytes: function (text) {
+                // The toolbar's return key never reaches xterm's keydown
+                // path, so an open composition would sit in the helper
+                // textarea and arrive after the newline, on the next
+                // prompt. Same debt as the hardware Enter, paid the same
+                // way.
+                if (text === "\r") flushPendingIme();
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(new TextEncoder().encode(text));
                 }

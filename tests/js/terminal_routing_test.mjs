@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The module is a browser script, not an ES module — evaluate it the way a
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
-const {pickReattachTarget, isActive, retryDelayMs, contrastText} = globalThis.TerminalRouting;
+const {pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText} = globalThis.TerminalRouting;
 
 const tests = {
     "a live session is retried, not replaced"() {
@@ -132,6 +132,43 @@ const tests = {
         assert.equal(isActive({status: "closed"}), false);
         assert.equal(isActive({}), false);
         assert.equal(isActive(null), false);
+    },
+
+    "a settled IME box owes nothing to Enter"() {
+        // The whole paragraph is still sitting in xterm's helper textarea
+        // because xterm never clears it between words, but every word went
+        // to the pty as its own composition ended. Forwarding it again is
+        // what doubled Daniel's typed text.
+        const settled = {composing: false, flushPending: false, start: 0, alreadySent: ""};
+        assert.equal(pendingImeText(settled, "the whole paragraph"), "");
+    },
+
+    "an open composition is forwarded from its own start"() {
+        // "hello " already went out; "world" is mid-composition and would
+        // be discarded by xterm's Enter path.
+        const open = {composing: true, flushPending: false, start: 6, alreadySent: ""};
+        assert.equal(pendingImeText(open, "hello world"), "world");
+    },
+
+    "a composition whose flush Enter is about to cancel is forwarded"() {
+        const inFlight = {composing: false, flushPending: true, start: 6, alreadySent: ""};
+        assert.equal(pendingImeText(inFlight, "hello world"), "world");
+    },
+
+    "text sent after the composition recorded its start is not resent"() {
+        // xterm's non-composition path can deliver characters between
+        // compositionstart and the flush; it corrects the offset by their
+        // length and so must this.
+        const state = {composing: true, flushPending: false, start: 6, alreadySent: "wo"};
+        assert.equal(pendingImeText(state, "hello world"), "rld");
+    },
+
+    "an empty or exhausted box owes nothing"() {
+        const open = {composing: true, flushPending: false, start: 11, alreadySent: ""};
+        assert.equal(pendingImeText(open, "hello world"), "");
+        assert.equal(pendingImeText(open, ""), "");
+        assert.equal(pendingImeText(open, null), "");
+        assert.equal(pendingImeText(null, "hello"), "");
     },
 };
 
