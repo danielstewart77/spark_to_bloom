@@ -260,6 +260,25 @@
             fitRaf = requestAnimationFrame(function () { fitRaf = null; doFit(); });
         }
         const resizeObserver = new ResizeObserver(scheduleFit);
+        // The attach URL's cols/rows become the pty's spawn geometry, so the
+        // measurement has to happen before the socket opens. A tile mounted
+        // into a stage that hasn't been laid out yet — which on mobile is
+        // every tile, since the rail is showing when you tap a card — has a
+        // zero-sized box, FitAddon's proposeDimensions declines to guess,
+        // and xterm silently keeps its 80x24 default. The TUI then paints
+        // its first screen for a terminal nearly twice the width of the
+        // phone showing it. Wait for a real box, then measure, then attach.
+        function fitWhenSized(done, attempts) {
+            const n = attempts || 0;
+            if (xtermEl.clientWidth > 0 && xtermEl.clientHeight > 0) {
+                try { fitAddon.fit(); } catch (e) {}
+                done();
+            } else if (n >= 60) {
+                done();  // ~1s of frames; attach at the default rather than never
+            } else {
+                requestAnimationFrame(function () { fitWhenSized(done, n + 1); });
+            }
+        }
         function doFit() {
             const before = term.cols + "x" + term.rows;
             try { fitAddon.fit(); } catch (e) {}
@@ -645,10 +664,9 @@
             mindId: function () { return mindId; },
             mount: function () {
                 term.open(xtermEl);
-                fitAddon.fit();
                 resizeObserver.observe(xtermEl);
                 applyLabel();
-                attach();
+                fitWhenSized(attach);
             },
             fit: doFit,
             focus: function () { setFocusedPanel(panel); term.focus(); },
