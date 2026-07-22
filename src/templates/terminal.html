@@ -224,6 +224,7 @@
         let deliberateClose = false;
         let reattachTimer = null;
         let reattachStartedAt = 0;
+        let reattachAttempts = 0;   // consecutive failed attaches; reset on a live socket
 
         function setInfo() {
             const label = getLabel(sessionId);
@@ -421,7 +422,7 @@
             setAttachState("connecting…");
             const socket = new WebSocket(wsUrl(sessionId, term.cols, term.rows));
             socket.binaryType = "arraybuffer";
-            socket.onopen = () => { setAttachState("attached"); sendResize(); };
+            socket.onopen = () => { reattachAttempts = 0; setAttachState("attached"); sendResize(); };
             socket.onmessage = (ev) => {
                 term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
             };
@@ -441,6 +442,13 @@
                 // so this tile stands down instead.
                 if (ev && ev.code === 1012) {
                     setAttachState("open in another window");
+                    return;
+                }
+                // 4415 = the mind is reachable but has no pty route (its
+                // image predates the terminal work). Retrying just spins,
+                // so say what's wrong and stop.
+                if (ev && ev.code === 4415) {
+                    setAttachState("no terminal on this mind");
                     return;
                 }
                 // Rotation kills the pty out from under the tile; hunt for
@@ -481,7 +489,18 @@
                         deadId: deadId,
                         openIds: Array.from(openPanels.keys()),
                     });
-                    if (target.action === "retry") { cancelReattachLoop(); attach(); return; }
+                    if (target.action === "retry") {
+                        // Back off between tries. An attach that fails as
+                        // fast as it opens (a mind that refuses the
+                        // handshake) would otherwise loop several times a
+                        // second and hammer the gateway.
+                        cancelReattachLoop();
+                        reattachAttempts += 1;
+                        const wait = TerminalRouting.retryDelayMs(reattachAttempts);
+                        setAttachState("reconnecting…");
+                        reattachTimer = setTimeout(attach, wait);
+                        return;
+                    }
                     if (target.action === "successor") { attachSuccessor(target.session); return; }
                 }
             } catch (err) {}

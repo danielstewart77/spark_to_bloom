@@ -55,5 +55,25 @@
         return {action: "wait"};
     }
 
-    root.TerminalRouting = {pickReattachTarget: pickReattachTarget, isActive: isActive};
+    /**
+     * Delay before retrying an attach to the same session, in ms.
+     *
+     * The first retry is quick — the common case is a dropped socket over
+     * a live pty, and waiting there is felt. Repeated failures mean the
+     * attach itself is being refused, so the interval grows and caps
+     * rather than spinning at the speed of the round trip.
+     *
+     * @param {number} attempt  1 for the first retry after a live socket
+     * @returns {number} ms to wait
+     */
+    function retryDelayMs(attempt) {
+        var n = Math.max(1, Math.floor(attempt) || 1);
+        return Math.min(500 * Math.pow(2, n - 1), 8000);
+    }
+
+    root.TerminalRouting = {
+        pickReattachTarget: pickReattachTarget,
+        isActive: isActive,
+        retryDelayMs: retryDelayMs,
+    };
 })(typeof globalThis !== "undefined" ? globalThis : this);
