@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
-    pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, pageScrollLines,
+    pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
     pageScrollAction, wheelReport, dragWheelSteps, parseOpenFragment, formatOpenFragment,
 } = globalThis.TerminalRouting;
 
@@ -177,6 +177,23 @@ const tests = {
         // length and so must this.
         const state = {composing: true, flushPending: false, start: 6, alreadySent: "wo"};
         assert.equal(pendingImeText(state, "hello world"), "rld");
+    },
+
+    "the IME accumulator is emptied once a burst has committed"() {
+        // Between words the box is settled; clearing it stops the next
+        // keystroke from diffing against a line the pty already holds.
+        assert.equal(shouldResetImeAccumulator({composing: false}), true);
+    },
+
+    "the IME accumulator is left alone mid-composition"() {
+        // The word being typed still lives in the box; clearing it now drops
+        // the in-progress word.
+        assert.equal(shouldResetImeAccumulator({composing: true}), false);
+    },
+
+    "an unknown composition state is left untouched"() {
+        assert.equal(shouldResetImeAccumulator(null), false);
+        assert.equal(shouldResetImeAccumulator(undefined), false);
     },
 
     "on the alternate buffer a page of scrolling is the program's to do"() {
