@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
-    pickReattachTarget, isActive, retryDelayMs, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
+    pickReattachTarget, isActive, retryDelayMs, socketIsStale, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
     pageScrollAction, wheelReport, dragWheelSteps, parseOpenFragment, formatOpenFragment,
 } = globalThis.TerminalRouting;
 
@@ -267,6 +267,19 @@ const tests = {
         assert.equal(pendingImeText(open, ""), "");
         assert.equal(pendingImeText(open, null), "");
         assert.equal(pendingImeText(null, "hello"), "");
+    },
+
+    "a socket silent past the threshold is stale"() {
+        // Keepalive is 5s; 15s (three missed beats) is the watchdog cutoff.
+        assert.equal(socketIsStale(100000, 100000 - 16000, 15000), true);
+        assert.equal(socketIsStale(100000, 100000 - 3000, 15000), false);
+        // Foreground return uses a tighter 6s so a rotation reattaches fast.
+        assert.equal(socketIsStale(100000, 100000 - 7000, 6000), true);
+    },
+
+    "a socket with nothing received yet is never called dead"() {
+        // lastRecvAt 0 means the socket just opened; leave it to onopen/onclose.
+        assert.equal(socketIsStale(100000, 0, 15000), false);
     },
 };
 

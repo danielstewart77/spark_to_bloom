@@ -308,6 +308,13 @@
         let reattachTimer = null;
         let reattachStartedAt = 0;
         let reattachAttempts = 0;   // consecutive failed attaches; reset on a live socket
+        let lastRecvAt = 0;         // ms of the last byte in; feeds the stale-socket watchdog
+        let staleTimer = null;      // watchdog interval; catches a half-open (zombie) socket
+        // The pty end sends a keepalive every 5s. Three missed beats is a
+        // zombie; a foreground return with even one missed beat reattaches
+        // eagerly, since that's the exact moment a rotation's socket died.
+        const STALE_MS = 15000;
+        const FOREGROUND_STALE_MS = 6000;
 
         function setInfo() {
             const label = getLabel(sessionId);
@@ -522,8 +529,9 @@
             setAttachState("connecting…");
             const socket = new WebSocket(wsUrl(sessionId, term.cols, term.rows));
             socket.binaryType = "arraybuffer";
-            socket.onopen = () => { reattachAttempts = 0; setAttachState("attached"); sendResize(); };
+            socket.onopen = () => { reattachAttempts = 0; lastRecvAt = Date.now(); setAttachState("attached"); sendResize(); };
             socket.onmessage = (ev) => {
+                lastRecvAt = Date.now();
                 term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
             };
             socket.onclose = (ev) => {
@@ -680,6 +688,25 @@
         function cancelReattachLoop() {
             if (reattachTimer) { clearTimeout(reattachTimer); reattachTimer = null; }
         }
+        // A half-open socket still reports OPEN, so onclose never fires and
+        // the normal reattach loop never starts. Tear the zombie down
+        // ourselves and reattach — the pty is almost certainly still live.
+        function forceReattach() {
+            if (destroyed || deliberateClose) return;
+            closeSocket();          // nulls onclose, so drive the loop directly
+            beginReattachLoop();
+        }
+        // Reattach if the connection has gone silent past a threshold. Called
+        // on a timer (a zombie left behind by a network blip) and eagerly on
+        // a foreground return (a mobile rotation, with a tighter threshold
+        // because that's when the socket most likely just died).
+        function reattachIfStale(thresholdMs) {
+            if (destroyed || deliberateClose) return;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (TerminalRouting.socketIsStale(Date.now(), lastRecvAt, thresholdMs)) {
+                forceReattach();
+            }
+        }
         function beginReattachLoop() {
             cancelReattachLoop();
             if (!mindId) return;
@@ -775,8 +802,10 @@
                 resizeObserver.observe(xtermEl);
                 applyLabel();
                 fitWhenSized(attach);
+                staleTimer = setInterval(function () { reattachIfStale(STALE_MS); }, 2000);
             },
             fit: doFit,
+            checkLiveness: function () { reattachIfStale(FOREGROUND_STALE_MS); },
             focus: function () { setFocusedPanel(panel); term.focus(); },
             refreshLabel: applyLabel,
             scrollPage: function (dir) {
@@ -799,6 +828,7 @@
                 destroyed = true;
                 resizeObserver.disconnect();
                 if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = null; }
+                if (staleTimer) { clearInterval(staleTimer); staleTimer = null; }
                 cancelReattachLoop();
                 closeSocket();
                 closeTtsStream();
@@ -893,6 +923,19 @@
     // fit() is cheap (a character-metric measurement plus an int compare)
     // and only sends a resize frame when the size actually changed.
     setInterval(refitAllPanels, 2000);
+
+    // A rotation or an app-switch often kills the socket while the tab is
+    // hidden, where the watchdog interval is throttled and can't fire. The
+    // moment the tab comes back, check each tile eagerly so a returning
+    // user gets a reattach in a beat instead of a 30s black screen while
+    // the browser waits out its own dead-socket timeout.
+    function checkAllPanelsLive() {
+        openPanels.forEach(function (p) { p.checkLiveness(); });
+    }
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") checkAllPanelsLive();
+    });
+    window.addEventListener("pageshow", checkAllPanelsLive);
 
     // ── session list rendering (flat rows grouped by mind) ────────
     function isActiveStatus(status) { return TerminalRouting.isActive({status: status}); }

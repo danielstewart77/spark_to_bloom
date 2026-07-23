@@ -72,6 +72,26 @@
     }
 
     /**
+     * Is an attached socket a zombie? A mobile rotation or a network blip
+     * leaves the TCP connection half-open: the browser keeps reporting the
+     * socket OPEN and does not fire onclose until its own ~30s timeout, so
+     * the tile sits black long after the pty is reachable again. The pty end
+     * sends a keepalive on a fixed cadence, so a gap since the last received
+     * byte that exceeds a few of those beats means the connection is dead
+     * even though it still claims to be open — reattach now instead of
+     * waiting for the browser to notice.
+     *
+     * @param {number} nowMs        Date.now()
+     * @param {number} lastRecvAt   ms timestamp of the last byte received
+     * @param {number} thresholdMs  silence tolerated before declaring death
+     * @returns {boolean}
+     */
+    function socketIsStale(nowMs, lastRecvAt, thresholdMs) {
+        if (!lastRecvAt) return false;   // nothing received yet — not our call
+        return (nowMs - lastRecvAt) > thresholdMs;
+    }
+
+    /**
      * Readable ink color against an arbitrary swatch background, by
      * perceived luminance. Shared by the focused tile's full-bar header
      * and the rail's painted picker cards, so both surfaces flip their
@@ -273,6 +293,7 @@
         pickReattachTarget: pickReattachTarget,
         isActive: isActive,
         retryDelayMs: retryDelayMs,
+        socketIsStale: socketIsStale,
         contrastText: contrastText,
         pendingImeText: pendingImeText,
         shouldResetImeAccumulator: shouldResetImeAccumulator,
