@@ -571,6 +571,33 @@
         }
         term.onData(sendRaw);
 
+        // xterm's hidden composition textarea is its model of "the current
+        // line": every change is diffed against the box's prior value, and
+        // the difference is what goes to the pty. That works for a shell
+        // xterm draws itself, but here a TUI (claude) owns the line, and the
+        // box is never cleared between words. Left to accumulate, it holds
+        // the whole line, and a mobile keyboard's autocorrect, prediction, or
+        // multi-character backspace rewrites text the pty already has — the
+        // diff then re-emits that stale region and the pty echoes it twice,
+        // which is the "keys repeat, deleted characters come back" report.
+        // Emptying the box after every committed burst (never mid-word, where
+        // it still holds what's being typed) makes each burst diff from an
+        // empty base, so nothing already sent can be sent again.
+        function resetImeAccumulator() {
+            const helper = term._core && term._core._compositionHelper;
+            if (helper && !TerminalRouting.shouldResetImeAccumulator({composing: helper._isComposing})) {
+                return;
+            }
+            const ta = term.textarea;
+            if (ta && ta.value) ta.value = "";
+            if (helper) {
+                helper._dataAlreadySent = "";
+                const pos = helper._compositionPosition;
+                if (pos) { pos.start = 0; pos.end = 0; }
+            }
+        }
+        term.onData(resetImeAccumulator);
+
         // Scrolling by finger. On the alternate buffer — which is where
         // the TUI lives, and so the only buffer this tile ever really
         // shows — the viewport has no overflow, so the browser has

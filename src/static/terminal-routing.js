@@ -126,6 +126,30 @@
     }
 
     /**
+     * Whether xterm's hidden composition textarea should be emptied now that
+     * a burst of input has been committed to the pty.
+     *
+     * The textarea is xterm's model of "the current line", diffed against its
+     * previous value on every change (grew -> send the appended tail, shrank
+     * -> send one DEL). But a TUI like claude owns the real line, not xterm.
+     * Left to accumulate, the box carries the whole line, and a mobile
+     * keyboard's autocorrect, prediction, or multi-character backspace
+     * rewrites text the pty already has — the diff then re-slices that stale
+     * region and echoes it a second time (the "keys repeat, deleted
+     * characters come back" bug). Emptying the box after each committed burst
+     * makes the next keystroke diff from nothing, so nothing can be re-sent.
+     *
+     * Never mid-composition: while a word is still being typed the box holds
+     * it, and clearing would drop the word in progress.
+     *
+     * @param {Object} state {composing: boolean}
+     * @returns {boolean} true when the accumulator should be reset to empty
+     */
+    function shouldResetImeAccumulator(state) {
+        return !!(state && state.composing !== true);
+    }
+
+    /**
      * How far one press of the tile's PgUp/PgDn moves the viewport.
      *
      * A whole screen at a time loses the reader's place, so two rows of
@@ -251,5 +275,6 @@
         retryDelayMs: retryDelayMs,
         contrastText: contrastText,
         pendingImeText: pendingImeText,
+        shouldResetImeAccumulator: shouldResetImeAccumulator,
     };
 })(typeof globalThis !== "undefined" ? globalThis : this);
