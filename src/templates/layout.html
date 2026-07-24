@@ -40,21 +40,14 @@
                 <li><a href="/pages/about.md">about</a></li>
                 <li><a href="/pullrequests">pull-&gt;requests</a></li>
                 <li><a href="/canvas">canvas</a></li>
-                <li class="nav-group">
-                    <a>homelab</a>
-                    <div class="nav-dropdown">
-                        <a href="http://192.168.4.64:8123" target="_blank" rel="noopener">home assistant</a>
-                        <a href="http://192.168.4.16:3001" target="_blank" rel="noopener">grafana</a>
-                        <a href="/events">events</a>
-                        <a href="/response_rules">response rules</a>
-                        <a href="/rules">standing rules</a>
-                    </div>
-                </li>
                 {% if current_user %}
                 <li><a href="/terminal">terminal</a></li>
                 <li><a href="/graph">graph</a></li>
                 <li><a href="/memory">memory</a></li>
                 <li><a href="/btc">btc</a></li>
+                <li><a href="/events">events</a></li>
+                <li><a href="/response_rules">response rules</a></li>
+                <li><a href="/rules">standing rules</a></li>
                 {% else %}
                 {% endif %}
                 <li class="user-controls">
