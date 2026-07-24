@@ -309,12 +309,16 @@
         let reattachStartedAt = 0;
         let reattachAttempts = 0;   // consecutive failed attaches; reset on a live socket
         let lastRecvAt = 0;         // ms of the last byte in; feeds the stale-socket watchdog
+        let socketOpenedAt = 0;     // ms the live socket opened; how long it held decides the backoff
         let staleTimer = null;      // watchdog interval; catches a half-open (zombie) socket
         // The pty end sends a keepalive every 5s. Three missed beats is a
         // zombie; a foreground return with even one missed beat reattaches
         // eagerly, since that's the exact moment a rotation's socket died.
         const STALE_MS = 15000;
         const FOREGROUND_STALE_MS = 6000;
+        // A socket that held this long was a working attach; anything
+        // shorter keeps its place in the backoff.
+        const STABLE_SOCKET_MS = 10000;
 
         function setInfo() {
             const label = getLabel(sessionId);
@@ -525,11 +529,17 @@
         }
         function attach() {
             closeSocket();
+            socketOpenedAt = 0;
             term.reset();
             setAttachState("connecting…");
             const socket = new WebSocket(wsUrl(sessionId, term.cols, term.rows));
             socket.binaryType = "arraybuffer";
-            socket.onopen = () => { reattachAttempts = 0; lastRecvAt = Date.now(); setAttachState("attached"); sendResize(); };
+            socket.onopen = () => {
+                socketOpenedAt = Date.now();
+                lastRecvAt = socketOpenedAt;
+                setAttachState("attached");
+                sendResize();
+            };
             socket.onmessage = (ev) => {
                 lastRecvAt = Date.now();
                 term.write(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data);
@@ -710,6 +720,14 @@
         function beginReattachLoop() {
             cancelReattachLoop();
             if (!mindId) return;
+            // Only a socket that stayed up clears the backoff. A socket
+            // that opens and dies straight back is a failing attach, and
+            // reconnecting at full speed is how a tile ends up flickering.
+            reattachAttempts = TerminalRouting.attemptsAfterSocket(
+                reattachAttempts,
+                socketOpenedAt ? Date.now() - socketOpenedAt : 0,
+                STABLE_SOCKET_MS,
+            );
             reattachStartedAt = Date.now();
             setAttachState("reattaching…");
             pollForSuccessor();

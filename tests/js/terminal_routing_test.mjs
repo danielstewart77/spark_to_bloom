@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
-    pickReattachTarget, isActive, retryDelayMs, socketIsStale, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
+    pickReattachTarget, isActive, retryDelayMs, socketIsStale, attemptsAfterSocket, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
     pageScrollAction, wheelReport, dragWheelSteps, parseOpenFragment, formatOpenFragment,
 } = globalThis.TerminalRouting;
 
@@ -275,6 +275,19 @@ const tests = {
         assert.equal(socketIsStale(100000, 100000 - 3000, 15000), false);
         // Foreground return uses a tighter 6s so a rotation reattaches fast.
         assert.equal(socketIsStale(100000, 100000 - 7000, 6000), true);
+    },
+
+    "a socket that dies right after opening keeps climbing the backoff"() {
+        // Evicted a second after connecting: that attach is failing, so the
+        // count carries and retryDelayMs stretches the next try.
+        assert.equal(attemptsAfterSocket(3, 1000, 10000), 3);
+        assert.ok(retryDelayMs(attemptsAfterSocket(3, 1000, 10000)) >= 2000);
+    },
+
+    "a socket that held clears the backoff"() {
+        assert.equal(attemptsAfterSocket(3, 30000, 10000), 0);
+        // A never-opened socket counts as a zero-length life, not a success.
+        assert.equal(attemptsAfterSocket(2, 0, 10000), 2);
     },
 
     "a socket with nothing received yet is never called dead"() {

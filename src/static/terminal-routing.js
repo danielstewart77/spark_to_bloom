@@ -92,6 +92,26 @@
     }
 
     /**
+     * Consecutive-failure count to carry into the next reattach, given how
+     * long the socket that just died stayed up.
+     *
+     * A socket that opens and dies straight back is a failing attach, not a
+     * recovered one, however clean its handshake looked — so its attempt
+     * count keeps climbing and `retryDelayMs` backs the tile off. Only a
+     * socket that held for a while proves the attach works and clears the
+     * count. Resetting on every open instead lets a tile that is being
+     * evicted as fast as it connects retry twice a second forever.
+     *
+     * @param {number} attempts    consecutive failures so far
+     * @param {number} lifetimeMs  how long the socket that just died was open
+     * @param {number} stableMs    uptime that counts as a healthy attach
+     * @returns {number} attempts to carry forward
+     */
+    function attemptsAfterSocket(attempts, lifetimeMs, stableMs) {
+        return lifetimeMs >= stableMs ? 0 : (attempts || 0);
+    }
+
+    /**
      * Readable ink color against an arbitrary swatch background, by
      * perceived luminance. Shared by the focused tile's full-bar header
      * and the rail's painted picker cards, so both surfaces flip their
@@ -294,6 +314,7 @@
         isActive: isActive,
         retryDelayMs: retryDelayMs,
         socketIsStale: socketIsStale,
+        attemptsAfterSocket: attemptsAfterSocket,
         contrastText: contrastText,
         pendingImeText: pendingImeText,
         shouldResetImeAccumulator: shouldResetImeAccumulator,
