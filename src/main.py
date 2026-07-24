@@ -378,68 +378,9 @@ async def download_hive_init_asset(filename: str):
     return _serve_hive_init_asset(filename)
 
 
-@app.get("/linkedin", response_class=HTMLResponse)
-async def linkedin(request: Request):
-    html_content = _render_markdown(BASE_DIR / "templates" / "linkedin" / "ada.md")
-    return _render_template(request, "linkedin.html", content=html_content)
-
-
 @app.get("/canvas", response_class=HTMLResponse)
 async def canvas(request: Request):
     return _render_template(request, "canvas.html")
-
-
-def _backlog_doc_context(doc: str | None, dir: str) -> dict:
-    backlog_dir = BASE_DIR / "backlog"
-    plans_dir = BASE_DIR / "plans"
-
-    def _scan_dir(d: Path) -> list:
-        items = []
-        if d.exists():
-            for f in sorted(d.glob("*.md"), key=lambda p: p.stem):
-                slug = f.stem
-                label = slug.replace("-", " ").title()
-                items.append({"slug": slug, "label": label})
-        return items
-
-    backlog_items = _scan_dir(backlog_dir)
-    plans_items = _scan_dir(plans_dir)
-
-    active_doc = None
-    active_dir = dir if dir in ("backlog", "plans") else "backlog"
-    source_dir = plans_dir if active_dir == "plans" else backlog_dir
-
-    if doc:
-        doc_path = source_dir / f"{doc}.md"
-        try:
-            resolved = doc_path.resolve()
-            if (
-                str(resolved).startswith(str(source_dir.resolve()))
-                and resolved.exists()
-                and resolved.is_file()
-            ):
-                html_content = _render_markdown(resolved)
-                active_doc = doc
-            else:
-                html_content = ""
-        except (OSError, ValueError):
-            html_content = ""
-    else:
-        html_content = ""
-
-    return {
-        "content": html_content,
-        "backlog_items": backlog_items,
-        "plans_items": plans_items,
-        "active_doc": active_doc,
-        "active_dir": active_dir,
-    }
-
-
-@app.get("/backlog", response_class=HTMLResponse)
-async def backlog_docs(request: Request, doc: str | None = None, dir: str = "backlog"):
-    ctx = _backlog_doc_context(doc, dir)
-    return _render_template(request, "backlog.html", **ctx)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -883,7 +824,7 @@ async def ws_terminal_attach(websocket: WebSocket, session_id: str):
     """Reverse-proxy a browser terminal WS into hive-comms' session attach.
 
     True interactive terminal, not the chat-pattern SSE the /console page
-    uses — see src/backlog/web-terminal-interface.md. Gated by the same
+    uses — see web-terminal-interface.md in the owner repo's backlog. Gated by the same
     session cookie as every other page here; unlike /ws/canvas's degrade
     -to-read-only pattern, an unauthenticated caller is rejected outright
     since this is full shell access.
