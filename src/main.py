@@ -856,6 +856,28 @@ async def _pump_terminal_ws(browser_ws: WebSocket, mind_ws) -> None:
             task.cancel()
 
 
+def _relayable_close_code(code: int | None) -> int | None:
+    """The gateway close code to pass to the browser, if any.
+
+    Every real code relays, whatever its range. The ones that matter are
+    not all private-use: 4410 is "session closed", 1012 is "another window
+    took the keyboard", 1008 is "the mind refused the terminal" — the last
+    two are how a tile knows to stand down instead of reconnecting. An
+    earlier 4000-4999 filter swallowed 1012, so an evicted desktop tile
+    read the eviction as a dropped connection and reattached, which
+    evicted the phone, which reattached, which evicted the desktop: a
+    tug-of-war that repainted both terminals about once a second and
+    cross-fed each tile the other's geometry (a 140-column repaint
+    shredded into a 44-column phone).
+
+    1005/1006 are synthetic "no close frame arrived" markers that cannot
+    legally go on the wire, so they relay as nothing.
+    """
+    if not code or code in (1005, 1006):
+        return None
+    return code
+
+
 @app.websocket("/api/terminal/attach/{session_id}")
 async def ws_terminal_attach(websocket: WebSocket, session_id: str):
     """Reverse-proxy a browser terminal WS into hive-comms' session attach.
@@ -880,11 +902,8 @@ async def ws_terminal_attach(websocket: WebSocket, session_id: str):
             additional_headers=_gateway_headers(),
         ) as mind_ws:
             await _pump_terminal_ws(websocket, mind_ws)
-            # Propagate the gateway's close code — 4410 ("session closed")
-            # is how the browser distinguishes a deliberate end from a
-            # rotation it should hunt a successor for.
-            code = mind_ws.close_code
-            if code and 4000 <= code <= 4999:
+            code = _relayable_close_code(mind_ws.close_code)
+            if code:
                 try:
                     await websocket.close(code=code, reason=mind_ws.close_reason or "")
                 except RuntimeError:

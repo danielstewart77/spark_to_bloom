@@ -572,6 +572,48 @@ def test_attach_ws_propagates_gateway_close_code(tmp_path, monkeypatch):
     assert excinfo.value.code == 4410
 
 
+def test_attach_ws_propagates_eviction_close_code(tmp_path, monkeypatch):
+    """1012 ("attached elsewhere") must reach the browser too.
+
+    It is a standard-range code, not a private 4xxx one, and swallowing it
+    is what turned an eviction into a tug-of-war: the evicted tile read a
+    plain disconnect, reconnected, evicted the tile that had just taken
+    over, and both terminals repainted each other's geometry on loop.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    client = _authed_client(tmp_path, monkeypatch)
+    fake_ws = _FakeMindWS(incoming=[b"x"], close_code=1012, close_reason="attached elsewhere")
+
+    def _fake_connect(url, **kwargs):
+        return fake_ws
+
+    with patch("main.websockets.connect", _fake_connect):
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/terminal/attach/sess-1") as ws:
+                assert ws.receive_bytes() == b"x"
+                ws.receive_bytes()
+
+    assert excinfo.value.code == 1012
+
+
+def test_relayable_close_code_keeps_standard_range_codes():
+    """1012 ("attached elsewhere") and 1008 ("refused") are standard-range,
+    not private 4xxx — swallowing them is what turned an eviction into a
+    tug-of-war between the phone and the desktop tile."""
+    assert main_mod._relayable_close_code(1012) == 1012
+    assert main_mod._relayable_close_code(1008) == 1008
+    assert main_mod._relayable_close_code(4410) == 4410
+
+
+def test_relayable_close_code_drops_synthetic_markers():
+    """1005/1006 mean "no close frame arrived" — local markers that cannot
+    legally be sent on the wire."""
+    assert main_mod._relayable_close_code(1006) is None
+    assert main_mod._relayable_close_code(1005) is None
+    assert main_mod._relayable_close_code(None) is None
+
+
 def test_attach_ws_closes_1011_when_gateway_unreachable(tmp_path, monkeypatch):
     client = _authed_client(tmp_path, monkeypatch)
 
