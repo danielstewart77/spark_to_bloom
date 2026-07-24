@@ -112,6 +112,23 @@
     }
 
     /**
+     * Has a tile retried enough that it should stop and wait to be asked?
+     *
+     * The successor hunt only ends the reattach loop when the session is
+     * gone. A session that exists but refuses to attach — a mind with no
+     * pty, a harness that closes the socket back — therefore never ends it
+     * at all, and the tile retries for as long as the tab is open. The cap
+     * is what turns that into a stopped tile with a visible way back.
+     *
+     * @param {number} attempts     consecutive failures, including this one
+     * @param {number} maxAttempts  cap before standing down
+     * @returns {boolean}
+     */
+    function attachExhausted(attempts, maxAttempts) {
+        return (attempts || 0) >= maxAttempts;
+    }
+
+    /**
      * Readable ink color against an arbitrary swatch background, by
      * perceived luminance. Shared by the focused tile's full-bar header
      * and the rail's painted picker cards, so both surfaces flip their
@@ -315,6 +332,7 @@
         retryDelayMs: retryDelayMs,
         socketIsStale: socketIsStale,
         attemptsAfterSocket: attemptsAfterSocket,
+        attachExhausted: attachExhausted,
         contrastText: contrastText,
         pendingImeText: pendingImeText,
         shouldResetImeAccumulator: shouldResetImeAccumulator,

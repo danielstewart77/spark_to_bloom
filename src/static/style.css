@@ -1023,6 +1023,13 @@ body:has(.terminal-page) .content-wrapper > .terminal-box { display: none; }
     white-space: nowrap;
 }
 
+/* A tile that has stopped trying: the state text is the way back in. */
+.term-panel-info.is-stopped {
+    color: #e0b050;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
 .term-panel-close {
     flex-shrink: 0;
     font-size: 0.9rem;

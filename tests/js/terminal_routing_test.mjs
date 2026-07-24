@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // <script> tag would, against globalThis.
 new Function(readFileSync(join(here, "..", "..", "src", "static", "terminal-routing.js"), "utf8"))();
 const {
-    pickReattachTarget, isActive, retryDelayMs, socketIsStale, attemptsAfterSocket, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
+    pickReattachTarget, isActive, retryDelayMs, socketIsStale, attemptsAfterSocket, attachExhausted, contrastText, pendingImeText, shouldResetImeAccumulator, pageScrollLines,
     pageScrollAction, wheelReport, dragWheelSteps, parseOpenFragment, formatOpenFragment,
 } = globalThis.TerminalRouting;
 
@@ -288,6 +288,14 @@ const tests = {
         assert.equal(attemptsAfterSocket(3, 30000, 10000), 0);
         // A never-opened socket counts as a zero-length life, not a success.
         assert.equal(attemptsAfterSocket(2, 0, 10000), 2);
+    },
+
+    "a refused attach stops trying at the cap"() {
+        // A live session that refuses every attach keeps pickReattachTarget
+        // answering "retry", so only the cap ends the loop.
+        assert.equal(attachExhausted(5, 6), false);
+        assert.equal(attachExhausted(6, 6), true);
+        assert.equal(attachExhausted(0, 6), false);
     },
 
     "a socket with nothing received yet is never called dead"() {

@@ -311,6 +311,7 @@
         let lastRecvAt = 0;         // ms of the last byte in; feeds the stale-socket watchdog
         let socketOpenedAt = 0;     // ms the live socket opened; how long it held decides the backoff
         let staleTimer = null;      // watchdog interval; catches a half-open (zombie) socket
+        let standingDown = false;   // stopped trying on purpose; the state text is a reconnect button
         // The pty end sends a keepalive every 5s. Three missed beats is a
         // zombie; a foreground return with even one missed beat reattaches
         // eagerly, since that's the exact moment a rotation's socket died.
@@ -319,6 +320,8 @@
         // A socket that held this long was a working attach; anything
         // shorter keeps its place in the backoff.
         const STABLE_SOCKET_MS = 10000;
+        // Roughly 25s of backed-off retries before the tile stops trying.
+        const MAX_ATTACH_ATTEMPTS = 6;
 
         function setInfo() {
             const label = getLabel(sessionId);
@@ -329,8 +332,23 @@
         }
         function setAttachState(state) {
             attachState = state;
+            standingDown = false;
+            info.classList.remove("is-stopped");
             setInfo();
         }
+        // A tile that has stopped trying — evicted by another window, refused
+        // by the mind, or out of reattach window — must still have a way
+        // back, or the only cure is reloading the page. The state text
+        // becomes the button.
+        function stopWith(state) {
+            attachState = state + " — tap to reconnect";
+            standingDown = true;
+            info.classList.add("is-stopped");
+            setInfo();
+        }
+        info.addEventListener("click", function () {
+            if (standingDown) { reattachAttempts = 0; attach(); }
+        });
 
         // ── custom name + color ───────────────────────────────────
         let editSelectedColor = "";
@@ -559,14 +577,21 @@
                 // took the keyboard. Reconnecting would start a tug-of-war,
                 // so this tile stands down instead.
                 if (ev && ev.code === 1012) {
-                    setAttachState("open in another window");
+                    stopWith("open in another window");
                     return;
                 }
                 // 4415 = the mind is reachable but has no pty route (its
                 // image predates the terminal work). Retrying just spins,
                 // so say what's wrong and stop.
                 if (ev && ev.code === 4415) {
-                    setAttachState("no terminal on this mind");
+                    stopWith("no terminal on this mind");
+                    return;
+                }
+                // 1008 = the mind took the attach and then refused it (no
+                // conversation to resume, a harness with no pty). That is a
+                // decision, not a blip: retrying just asks again forever.
+                if (ev && ev.code === 1008) {
+                    stopWith("mind refused the terminal");
                     return;
                 }
                 // Rotation kills the pty out from under the tile; hunt for
@@ -750,6 +775,14 @@
                         // second and hammer the gateway.
                         cancelReattachLoop();
                         reattachAttempts += 1;
+                        // The session still exists, so the successor hunt
+                        // never ends the loop on its own — without a cap a
+                        // tile whose attach is being refused retries for as
+                        // long as the tab is open. Stop and offer the tap.
+                        if (TerminalRouting.attachExhausted(reattachAttempts, MAX_ATTACH_ATTEMPTS)) {
+                            stopWith("can't attach");
+                            return;
+                        }
                         const wait = TerminalRouting.retryDelayMs(reattachAttempts);
                         setAttachState("reconnecting…");
                         reattachTimer = setTimeout(attach, wait);
@@ -759,7 +792,7 @@
                 }
             } catch (err) {}
             if (Date.now() - reattachStartedAt >= REATTACH_WINDOW_MS) {
-                setAttachState("disconnected — reopen from the list");
+                stopWith("disconnected");
                 return;
             }
             reattachTimer = setTimeout(pollForSuccessor, 2000);
