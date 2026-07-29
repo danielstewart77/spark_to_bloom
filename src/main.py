@@ -194,6 +194,11 @@ async def home(request: Request):
     return _render_template(request, "home.html")
 
 
+@app.get("/hive-mind", response_class=HTMLResponse)
+async def hive_mind(request: Request):
+    return _render_template(request, "hive_mind.html")
+
+
 @app.get("/pullrequests", response_class=HTMLResponse)
 async def pullrequests(request: Request):
     return _render_template(request, "pullrequests.html")

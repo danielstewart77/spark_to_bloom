@@ -1,0 +1,149 @@
+{% extends "layout.html" %}
+{% block title %}Hive Mind · Spark to Bloom{% endblock %}
+{% block intro %}{% endblock %}
+{% block footer %}{% endblock %}
+{% block content %}
+<main class="hive-showcase">
+    <section class="hive-hero">
+        <div class="hive-hero-grid" aria-hidden="true"></div>
+        <div class="hive-hero-glow hive-hero-glow-a" aria-hidden="true"></div>
+        <div class="hive-hero-glow hive-hero-glow-b" aria-hidden="true"></div>
+        <div class="hive-hero-copy">
+            <a class="hive-back" href="/">← spark to bloom / projects</a>
+            <p class="hive-eyebrow"><span></span> Local-first AI infrastructure</p>
+            <h1>One intelligence.<br><em>Many minds.</em></h1>
+            <p class="hive-lede">Hive Mind turns the machines you already own into a private network of AI minds—each with its own role, tools, and runtime, all connected by shared memory and a common nervous system.</p>
+            <div class="hive-trust-row" aria-label="Project qualities">
+                <span>Self-hosted</span><span>Codex + Claude</span><span>Persistent memory</span><span>Human in the loop</span>
+            </div>
+            <div class="hive-install-card">
+                <div class="hive-install-head"><span>Clone the Hive</span><span>Git · Linux · macOS · WSL</span></div>
+                <div class="hive-command-row">
+                    <code id="hive-install-command">git clone https://github.com/danielstewart77/hive-mind.git &amp;&amp; cd hive-mind</code>
+                    <button class="hive-copy-button" type="button" data-copy-target="hive-install-command" aria-label="Copy install command"><span class="copy-idle">copy</span><span class="copy-done">copied</span></button>
+                </div>
+                <p>Gets the complete stack onto your machine. Follow the repository Quick Start to create local config, add credentials, and start Docker explicitly.</p>
+            </div>
+            <div class="hive-hero-actions">
+                <a class="hive-button hive-button-primary" href="#inside">See it running <span>↓</span></a>
+                <a class="hive-button hive-button-secondary" href="https://github.com/danielstewart77/hive-mind" target="_blank" rel="noopener">View source <span>↗</span></a>
+            </div>
+        </div>
+        <aside class="hive-live-card" aria-label="Live hive snapshot">
+            <div class="hive-live-head"><span><i></i> Daniel's hive · live capture</span><span>JUL 29</span></div>
+            <div class="hive-orbit" aria-hidden="true">
+                <div class="hive-core"><span>HIVE</span><small>nervous system</small></div>
+                <span class="hive-node node-a">MO</span><span class="hive-node node-b">SK</span><span class="hive-node node-c">AD</span><span class="hive-node node-d">HE</span>
+            </div>
+            <div class="hive-live-metrics">
+                <div><strong>9</strong><span>minds</span></div>
+                <div><strong>4</strong><span>edge minds</span></div>
+                <div><strong>5</strong><span>capability nodes</span></div>
+                <div><strong>4</strong><span>live sessions</span></div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="hive-manifesto">
+        <p class="hive-section-tag">// what it is</p>
+        <div>
+            <h2>Not a chatbot.<br>A living system.</h2>
+            <p>A mind is more than a model call. It has an identity, a soul, a set of capabilities, durable memory, and somewhere to run. The Hive connects those minds so context survives individual conversations—and useful work can move between people, devices, models, and machines.</p>
+        </div>
+    </section>
+
+    <section class="hive-proof" id="inside">
+        <div class="hive-section-heading">
+            <div><p class="hive-section-tag">// the control plane</p><h2>Your whole intelligence network.<br>One quiet cockpit.</h2></div>
+            <p>See every mind, edge runtime, capability, service, and active session without losing the thread.</p>
+        </div>
+        <figure class="hive-browser-frame hive-browser-main">
+            <div class="hive-browser-bar"><span></span><span></span><span></span><code>hive.sparktobloom.com/overview</code><b>LIVE</b></div>
+            <img src="/static/images/hive/overview.png" alt="Hive control center showing nine registered minds, edge minds, capability nodes, active sessions, and core service health" loading="lazy">
+        </figure>
+        <div class="hive-caption-row"><span>Actual production interface</span><span>9 minds · 4 edges · 5 capabilities · 4 active sessions</span></div>
+    </section>
+
+    <section class="hive-terminal-section">
+        <div class="hive-terminal-copy">
+            <p class="hive-section-tag">// parallel work</p>
+            <h2>Four agents.<br>One screen.<br><em>No lost state.</em></h2>
+            <p>Persistent, tmux-backed browser terminals keep long-running Codex and Claude sessions alive across tabs and devices. Name them, color them, suspend them, resume them—and watch the work happen in parallel.</p>
+            <ul>
+                <li><span>01</span>Multi-session 2×2 workspace</li>
+                <li><span>02</span>Cross-device labels and colors</li>
+                <li><span>03</span>Persistent session resume</li>
+                <li><span>04</span>Optional voice playback</li>
+            </ul>
+        </div>
+        <figure class="hive-browser-frame hive-terminal-frame">
+            <div class="hive-browser-bar"><span></span><span></span><span></span><code>terminal.sparktobloom.com</code><b>4 ATTACHED</b></div>
+            <img src="/static/images/hive/terminal-grid.png" alt="Hive browser terminal with four live AI agent sessions running in a two by two grid" loading="lazy">
+        </figure>
+    </section>
+
+    <section class="hive-capabilities">
+        <div class="hive-section-heading">
+            <div><p class="hive-section-tag">// built for continuity</p><h2>The parts that make<br>an assistant become a mind.</h2></div>
+        </div>
+        <div class="hive-bento">
+            <article class="hive-feature hive-feature-wide">
+                <span class="hive-feature-num">01</span><div class="hive-feature-icon">⌬</div>
+                <h3>Memory that compounds</h3><p>Lucent combines semantic retrieval with a knowledge graph so sessions can end without your context disappearing with them.</p>
+                <div class="hive-memory-demo"><span>turn</span><i></i><span>extract</span><i></i><span>connect</span><i></i><span>recall</span></div>
+            </article>
+            <article class="hive-feature"><span class="hive-feature-num">02</span><div class="hive-feature-icon">⟷</div><h3>Minds can call minds</h3><p>Route a focused task to the mind with the right tools, machine access, or point of view—and get a durable answer back.</p></article>
+            <article class="hive-feature"><span class="hive-feature-num">03</span><div class="hive-feature-icon">◉</div><h3>Model freedom</h3><p>Run Codex, Claude, or local Ollama-backed minds together. The identity belongs to the mind, not the provider.</p></article>
+            <article class="hive-feature"><span class="hive-feature-num">04</span><div class="hive-feature-icon">⌁</div><h3>Everywhere you are</h3><p>Keep the same conversation moving through Telegram, Discord, voice, and the browser terminal.</p></article>
+            <article class="hive-feature hive-feature-wide"><span class="hive-feature-num">05</span><div class="hive-feature-icon">✓</div><h3>Autonomy with a brake pedal</h3><p>Scheduled work, proactive skills, and remote actions meet explicit human approval at the moments that matter.</p><div class="hive-approval-demo"><span>Agent requests action</span><b>REVIEW</b><button type="button" tabindex="-1">Approve once</button></div></article>
+        </div>
+    </section>
+
+    <section class="hive-screens">
+        <div class="hive-screen-card">
+            <div><p class="hive-section-tag">// heterogeneous by design</p><h3>One roster. Any runtime.</h3><p>Core and edge minds can live on the Hive host, a workstation, a server, or a sandboxed family machine.</p></div>
+            <figure class="hive-browser-frame"><div class="hive-browser-bar"><span></span><span></span><span></span><code>/minds</code></div><img src="/static/images/hive/minds.png" alt="Hive roster showing minds using different models, harnesses, and locations" loading="lazy"></figure>
+        </div>
+        <div class="hive-screen-card hive-screen-card-dark">
+            <div><p class="hive-section-tag">// connected understanding</p><h3>See what the Hive knows.</h3><p>Explore people, concepts, memories, and their relationships. This live capture is intentionally blurred to protect private node labels.</p></div>
+            <figure class="hive-browser-frame"><div class="hive-browser-bar"><span></span><span></span><span></span><code>/graph · labels redacted</code></div><img src="/static/images/hive/knowledge-graph.png" alt="Redacted live Hive knowledge graph showing connected memory nodes" loading="lazy"></figure>
+        </div>
+    </section>
+
+    <section class="hive-architecture">
+        <p class="hive-section-tag">// how the pieces connect</p>
+        <h2>A nervous system for every surface, mind, and machine.</h2>
+        <div class="hive-flow">
+            <div><small>01 · SURFACES</small><span>Telegram</span><span>Terminal</span><span>Discord</span><span>Voice</span></div>
+            <b>→</b>
+            <div><small>02 · MINDS</small><span>Identity</span><span>Skills</span><span>Harness</span><span>Runtime</span></div>
+            <b>→</b>
+            <div class="hive-flow-core"><small>03 · NERVOUS SYSTEM</small><span>Hive Comms</span><span>Sessions</span><span>Broker</span><span>Approvals</span></div>
+            <b>→</b>
+            <div><small>04 · INTELLIGENCE</small><span>Lucent</span><span>Graph</span><span>Vectors</span><span>Capabilities</span></div>
+        </div>
+    </section>
+
+    <section class="hive-final-cta">
+        <div><p class="hive-section-tag">// make it yours</p><h2>Stand up your own Hive.</h2><p>Start with one mind on one machine. Add models, surfaces, memory, and edge nodes as the system earns its place in your life.</p></div>
+        <div class="hive-final-command"><code id="hive-install-command-bottom">git clone https://github.com/danielstewart77/hive-mind.git &amp;&amp; cd hive-mind</code><button class="hive-copy-button" type="button" data-copy-target="hive-install-command-bottom"><span class="copy-idle">copy command</span><span class="copy-done">copied</span></button></div>
+        <p class="hive-install-caveat"><strong>What this command does:</strong> clones the full, inspectable source and puts you in its directory. <strong>What it does not do:</strong> silently install or authenticate Codex/Claude, collect credentials, or start privileged services. Those stay visible in the repository Quick Start.</p>
+        <div class="hive-final-links"><a class="hive-button hive-button-primary" href="https://github.com/danielstewart77/hive-mind" target="_blank" rel="noopener">Explore the repository <span>↗</span></a><a class="hive-text-link" href="mailto:daniel.stewart77@gmail.com">Talk to Daniel about Hive Mind →</a></div>
+    </section>
+</main>
+<script>
+document.querySelectorAll("[data-copy-target]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+        var target = document.getElementById(button.dataset.copyTarget);
+        try {
+            await navigator.clipboard.writeText(target.textContent.trim());
+            button.classList.add("is-copied");
+            window.setTimeout(function () { button.classList.remove("is-copied"); }, 1800);
+        } catch (error) {
+            var range = document.createRange(); range.selectNodeContents(target);
+            var selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+        }
+    });
+});
+</script>
+{% endblock %}
