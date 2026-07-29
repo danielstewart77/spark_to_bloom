@@ -31,5 +31,8 @@ def test_hive_mind_showcase_is_public_and_links_from_home(tmp_path, monkeypatch)
     assert showcase.status_code == 200
     assert "One intelligence" in showcase.text
     assert "git clone https://github.com/danielstewart77/hive-mind.git" in showcase.text
+    assert "One inference gateway" in showcase.text
+    assert "https://github.com/danielstewart77/inference-proxy" in showcase.text
+    assert "6 capabilities" in showcase.text
     assert "/static/images/hive/terminal-grid.png" in showcase.text
     assert 'href="/hive-mind"' in home.text
