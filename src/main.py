@@ -38,6 +38,9 @@ app = FastAPI(
     description="A blog about AI, orchestration, and development thoughts",
     version="1.1.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
