@@ -17,12 +17,12 @@
                 <span>Self-hosted</span><span>Codex + Claude</span><span>Persistent memory</span><span>Human in the loop</span>
             </div>
             <div class="hive-install-card">
-                <div class="hive-install-head"><span>Clone the Hive</span><span>Git · Linux · macOS · WSL</span></div>
+                <div class="hive-install-head"><span>Install the Hive</span><span>Linux · Docker · no sudo</span></div>
                 <div class="hive-command-row">
-                    <code id="hive-install-command">git clone https://github.com/danielstewart77/hive-mind.git &amp;&amp; cd hive-mind</code>
+                    <code id="hive-install-command">curl -fsSL https://sparktobloom.com/hive/install.sh | bash</code>
                     <button class="hive-copy-button" type="button" data-copy-target="hive-install-command" aria-label="Copy install command"><span class="copy-idle">copy</span><span class="copy-done">copied</span></button>
                 </div>
-                <p>Gets the complete stack onto your machine. Follow the repository Quick Start to create local config, add credentials, and start Docker explicitly.</p>
+                <p>Paste into a terminal on the machine that will run the hive. It checks Docker, Compose, git, Python and disk space, then prints a link to a setup page where you choose the pieces, your models and your proxy. Run the same command again to pick up fixes; every secret is kept.</p>
             </div>
             <div class="hive-hero-actions">
                 <a class="hive-button hive-button-primary" href="#inside">See it running <span>↓</span></a>
@@ -127,8 +127,8 @@
 
     <section class="hive-final-cta">
         <div><p class="hive-section-tag">// make it yours</p><h2>Stand up your own Hive.</h2><p>Start with one mind on one machine. Add models, surfaces, memory, and edge nodes as the system earns its place in your life.</p></div>
-        <div class="hive-final-command"><code id="hive-install-command-bottom">git clone https://github.com/danielstewart77/hive-mind.git &amp;&amp; cd hive-mind</code><button class="hive-copy-button" type="button" data-copy-target="hive-install-command-bottom"><span class="copy-idle">copy command</span><span class="copy-done">copied</span></button></div>
-        <p class="hive-install-caveat"><strong>What this command does:</strong> clones the full, inspectable source and puts you in its directory. <strong>What it does not do:</strong> silently install or authenticate Codex/Claude, collect credentials, or start privileged services. Those stay visible in the repository Quick Start.</p>
+        <div class="hive-final-command"><code id="hive-install-command-bottom">curl -fsSL https://sparktobloom.com/hive/install.sh | bash</code><button class="hive-copy-button" type="button" data-copy-target="hive-install-command-bottom"><span class="copy-idle">copy command</span><span class="copy-done">copied</span></button></div>
+        <p class="hive-install-caveat"><strong>What this command does:</strong> clones the public repos into <code>~/hive</code> and starts a local setup page, which builds and starts the containers you pick. <strong>What it does not do:</strong> use sudo, touch anything outside its folder, or send your keys anywhere but your own proxy. Bringing an existing inference proxy? It needs an embedding model (<code>qwen3-embedding:8b</code>) and a classifier model (<code>gpt-oss:20b-32k</code>) registered; the setup page checks both.</p>
         <div class="hive-final-links"><a class="hive-button hive-button-primary" href="https://github.com/danielstewart77/hive-mind" target="_blank" rel="noopener">Explore the repository <span>↗</span></a><a class="hive-text-link" href="mailto:daniel.stewart77@gmail.com">Talk to Daniel about Hive Mind →</a></div>
     </section>
 </main>
