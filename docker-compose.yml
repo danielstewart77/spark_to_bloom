@@ -3,6 +3,37 @@ services:
     build: .
     container_name: spark-to-bloom-app
     restart: unless-stopped
+    # Log who actually asked, not the bridge.
+    #
+    # Caddy fronts this at gethivemind.sparktobloom.com and already sets
+    # X-Forwarded-For on every request. It reverse-proxies to the host's
+    # published port rather than over this network, so docker-proxy SNATs the
+    # connection and the socket peer is always 192.168.48.1, the hivemind
+    # bridge gateway. uvicorn's default access log prints the socket peer, so
+    # the real address arrives and is thrown away: measured 2026-11-14 by
+    # sending a probe through Caddy carrying a marker address and watching the
+    # app log the bridge anyway. Roughly 350 dotfile-and-secrets 404s since
+    # 2026-10-17 are therefore unattributable, which is the whole complaint.
+    #
+    # --forwarded-allow-ips is deliberately that one address and not "*".
+    # Port 5000 is published on every interface and this host runs no
+    # firewall, so anything on the LAN can reach the app directly, bypassing
+    # Caddy; trusting the header from any peer would let such a client claim
+    # whatever address it liked and we would be attributing sweeps to a
+    # fiction. Scoped here, only traffic that actually came through the proxy
+    # is believed. The direct-to-5000 path is still open and still logs the
+    # bridge - closing it means moving Caddy onto this network and
+    # unpublishing the port, which is a separate change.
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - 192.168.48.1
     environment:
       - ENVIRONMENT=production
       - GATEWAY_API_URL=http://hive-comms:8424
